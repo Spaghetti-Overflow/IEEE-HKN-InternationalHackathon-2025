@@ -1,0 +1,22 @@
+# System files
+.DS_Store
+
+# Output dirs
+out/
+
+# Temporary files
+tmp/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Virtual environment
+venv/
+env/
+
+# Obsidian vault
+.obsidian/
