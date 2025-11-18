@@ -4,7 +4,7 @@ DB_USER ?= postgres
 DB_NAME ?= budgetdb
 DC := $(DOCKER_COMPOSE) -f $(COMPOSE_FILE)
 
-.PHONY: help build up down restart logs ps seed base_seed demo_seed server-shell client-shell db-shell clean
+.PHONY: help build up down restart logs server_log client_log ps seed base_seed demo_seed server-shell client-shell db-shell clean all
 
 help:
 	@echo "Usage: make <target>"
@@ -32,6 +32,12 @@ up:
 
 logs:
 	$(DC) logs -f
+
+server_log:
+	$(DC) logs -f server
+
+client_log:
+	$(DC) logs -f client
 
 ps:
 	$(DC) ps
@@ -62,3 +68,5 @@ db-shell:
 
 clean:
 	$(DC) down -v
+
+all: clean demo_seed up

@@ -42,6 +42,7 @@ services:
       PGSSL: 'false'
       JWT_SECRET: ${JWT_SECRET:-change_me_jwt}
       CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost:5173}
+      CLIENT_ORIGINS: ${CLIENT_ORIGINS:-http://localhost:5173}
       AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
       UPLOAD_DIR: ${UPLOAD_DIR:-/uploads}
       UPLOAD_MAX_BYTES: ${UPLOAD_MAX_BYTES:-5242880}
