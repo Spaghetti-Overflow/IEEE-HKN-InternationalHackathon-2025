@@ -1,17 +1,24 @@
+##
+# Docker Compose stack for Smart Budget Scheduler.
+#
+# Copy `.env.example` to `.env` and customize secrets (DB password, JWT secret,
+# origins, etc.) before running `docker compose up` or `make up`.
+##
 services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    # PostgreSQL credentials are provided via .env (never commit real secrets).
     environment:
-      POSTGRES_DB: budgetdb
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-budgetdb}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     ports:
       - '5432:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U postgres -d budgetdb']
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-budgetdb}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -23,19 +30,22 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # The API reuses the same DB credentials and derives its auth settings from .env.
     environment:
       NODE_ENV: production
       PORT: 4000
-      PGHOST: postgres
-      PGPORT: 5432
-      PGUSER: postgres
-      PGPASSWORD: postgres
-      PGDATABASE: budgetdb
+      PGHOST: ${PGHOST:-postgres}
+      PGPORT: ${PGPORT:-5432}
+      PGUSER: ${POSTGRES_USER:-postgres}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      PGDATABASE: ${POSTGRES_DB:-budgetdb}
       PGSSL: 'false'
-      JWT_SECRET: supersecretkey
-      CLIENT_ORIGIN: http://localhost:5173
-      AUTH_COOKIE_SECURE: 'false'
-      UPLOAD_DIR: /uploads
+      JWT_SECRET: ${JWT_SECRET:-change_me_jwt}
+      CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost:5173}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
+      UPLOAD_DIR: ${UPLOAD_DIR:-/uploads}
+      UPLOAD_MAX_BYTES: ${UPLOAD_MAX_BYTES:-5242880}
+      UPLOAD_ALLOWED_MIME_TYPES: ${UPLOAD_ALLOWED_MIME_TYPES:-image/jpeg,image/png,application/pdf}
     ports:
       - '4000:4000'
     volumes:

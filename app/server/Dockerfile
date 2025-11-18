@@ -1,11 +1,16 @@
 # syntax=docker/dockerfile:1
 
-FROM node:20-alpine AS deps
+# Stage 1: install dependencies without dev tooling to keep final image slim.
+FROM node:22-alpine3.20 AS deps
+RUN apk update && apk upgrade --no-cache
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
-FROM node:20-alpine AS runner
+# Stage 2: copy app source + node_modules. Runtime secrets are injected via
+# environment variables (e.g., JWT_SECRET) at container start, never baked in.
+FROM node:22-alpine3.20 AS runner
+RUN apk update && apk upgrade --no-cache
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=4000
