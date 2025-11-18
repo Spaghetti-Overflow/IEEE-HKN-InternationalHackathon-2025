@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
+import { FiDownloadCloud, FiFileText, FiLogOut, FiArrowUpRight, FiCalendar, FiTrendingUp } from 'react-icons/fi';
 import {
   Bar,
   BarChart,
@@ -47,6 +48,14 @@ const emptyEvent = (budgetId) => ({
   endTs: datetimeLocal(),
   notes: ''
 });
+
+const DEADLINE_STATUS_ORDER = ['open', 'submitted', 'won', 'lost'];
+const DEADLINE_STATUS_LABELS = {
+  open: 'Open',
+  submitted: 'Submitted',
+  won: 'Won',
+  lost: 'Lost'
+};
 
 export default function DashboardPage() {
   const { user, logout } = useAuth();
@@ -187,121 +196,183 @@ export default function DashboardPage() {
     };
   }, [activeBudget]);
 
+  const budgetHealth = useMemo(() => {
+    if (!analytics?.balance) return null;
+    const { allocated, actualExpense, actualIncome, actualNet, utilization } = analytics.balance;
+    return {
+      allocated,
+      spent: actualExpense,
+      net: actualNet,
+      utilization: Math.max(0, utilization ?? 0)
+    };
+  }, [analytics]);
+
+  const projectionWindowDays = analytics?.projectionWindowDays || 30;
+
+  const upcomingSummary = useMemo(() => {
+    const list = analytics?.upcoming || [];
+    if (!list.length) {
+      return { count: 0, incomes: 0, expenses: 0, net: 0 };
+    }
+    const totals = list.reduce(
+      (acc, tx) => {
+        if (tx.type === 'income') {
+          acc.incomes += tx.amount;
+        } else {
+          acc.expenses += tx.amount;
+        }
+        return acc;
+      },
+      { incomes: 0, expenses: 0 }
+    );
+    return {
+      count: list.length,
+      incomes: totals.incomes,
+      expenses: totals.expenses,
+      net: totals.incomes - totals.expenses
+    };
+  }, [analytics]);
+
+  const deadlineBreakdown = useMemo(() => analytics?.deadlineCounts || {}, [analytics]);
+
+  const nextDeadline = useMemo(() => {
+    if (!deadlines.length) return null;
+    const upcoming = [...deadlines].sort((a, b) => a.dueTimestamp - b.dueTimestamp);
+    return upcoming[0];
+  }, [deadlines]);
+
+  const topCategory = useMemo(() => {
+    const list = analytics?.categories || [];
+    if (!list.length) return null;
+    return [...list].sort((a, b) => b.expenses + b.incomes - (a.expenses + a.incomes))[0];
+  }, [analytics]);
+
   return (
-    <main className="dashboard">
-      <header className="dashboard__header">
-        <div>
-          <p className="muted">Smart Budget Scheduler</p>
-          <h1>{activeBudget ? activeBudget.name : 'No budget yet'}</h1>
+    <main className="dashboard container-xxl">
+      <nav className="app-nav card card--glass">
+        <div className="brand">
+          <span className="brand__dot" />
+          <div>
+            <p className="muted text-uppercase mb-0">IEEE-HKN</p>
+            <h2>Budget HQ</h2>
+          </div>
         </div>
-        <div className="header-actions">
+        <div className="nav-actions">
           {exportsBaseUrl ? (
-            <>
-              <a className="secondary" href={`${exportsBaseUrl}/csv`}>
-                Export CSV
+            <div className="btn-group flex-wrap">
+              <a className="btn btn-primary-soft" href={`${exportsBaseUrl}/csv`} target="_blank" rel="noreferrer">
+                <FiDownloadCloud /> CSV
               </a>
-              <a className="secondary" href={`${exportsBaseUrl}/pdf`}>
-                Export PDF
+              <a className="btn btn-outline-primary" href={`${exportsBaseUrl}/pdf`} target="_blank" rel="noreferrer">
+                <FiFileText /> PDF
               </a>
-            </>
+            </div>
           ) : null}
-          <button className="secondary" onClick={logout}>
-            Logout ({user?.displayName || user?.username})
+          <button className="btn btn-outline-dark" onClick={logout}>
+            <FiLogOut /> Logout ({user?.displayName || user?.username})
           </button>
         </div>
-      </header>
+      </nav>
+
+      <section className="hero card hero-card">
+        <div className="hero__text">
+          <p className="muted text-uppercase">Smart Budget Scheduler</p>
+          <h1>{activeBudget ? activeBudget.name : 'Plan your first chapter budget'}</h1>
+          <p className="hero__subtitle">
+            {activeBudget ? `Academic year ${activeBudget.academicLabel}` : 'Create a budget to unlock tracking, deadlines, and analytics.'}
+          </p>
+          <div className="hero__meta">
+            <span className="pill pill--light">Actual ${transactionTotals.actual.toFixed(2)}</span>
+            <span className="pill pill--light">Projected ${transactionTotals.projected.toFixed(2)}</span>
+            <span className="pill pill--outline">{deadlineBreakdown.open || 0} open deadlines</span>
+          </div>
+        </div>
+        <div className="hero__actions">
+          {nextDeadline ? (
+            <div className="next-deadline">
+              <p className="muted mb-1">Next milestone</p>
+              <strong>{nextDeadline.title}</strong>
+              <p className="muted">{format(nextDeadline.dueTimestamp * 1000, 'PPpp')}</p>
+            </div>
+          ) : (
+            <p className="muted">No upcoming deadlines yet.</p>
+          )}
+        </div>
+      </section>
 
       {error ? <p className="error-text">{error}</p> : null}
 
-      <section className="card budget-switcher">
-        <div>
-          <label>
-            Active budget
-            <select
-              value={selectedBudgetId || ''}
-              onChange={(e) => setSelectedBudgetId(e.target.value ? Number(e.target.value) : null)}
-            >
-              {budgets.map((budget) => (
-                <option key={budget.id} value={budget.id}>
-                  {budget.name} — {budget.academicLabel}
-                </option>
-              ))}
-              {!budgets.length ? <option value="">Create your first budget below</option> : null}
-            </select>
-          </label>
-        </div>
-        <form className="budget-form" onSubmit={handleBudgetCreate}>
-          <label>
-            New budget name
-            <input value={budgetForm.name} onChange={(e) => setBudgetForm((prev) => ({ ...prev, name: e.target.value }))} />
-          </label>
-          <label>
-            Allocation (USD)
-            <input
-              type="number"
-              min="0"
-              value={budgetForm.allocatedAmount}
-              onChange={(e) => setBudgetForm((prev) => ({ ...prev, allocatedAmount: e.target.value }))}
-            />
-          </label>
-          <button className="primary" type="submit">
-            Create budget
-          </button>
-        </form>
-      </section>
-
-      {archivedBudgets.length ? (
-        <section className="card">
-          <div className="section-header">
+      <section className="dashboard-grid">
+        <div className="dashboard-main">
+          <section className="card budget-switcher">
             <div>
-              <h3>Previous academic years</h3>
-              <p className="muted">Browse older budgets without losing access.</p>
+              <label>
+                Active budget
+                <select
+                  value={selectedBudgetId || ''}
+                  onChange={(e) => setSelectedBudgetId(e.target.value ? Number(e.target.value) : null)}
+                >
+                  {budgets.map((budget) => (
+                    <option key={budget.id} value={budget.id}>
+                      {budget.name} — {budget.academicLabel}
+                    </option>
+                  ))}
+                  {!budgets.length ? <option value="">Create your first budget below</option> : null}
+                </select>
+              </label>
             </div>
-          </div>
-          <div className="archived-grid">
-            {archivedBudgets.map((budget) => (
-              <article key={budget.id} className="archived-card">
-                <h4>{budget.name}</h4>
-                <p className="muted">{budget.academicLabel}</p>
-                <p>Final balance ${budget.actualBalance.toFixed(2)}</p>
-                <button className="secondary" onClick={() => setSelectedBudgetId(budget.id)}>
-                  Open budget
-                </button>
-              </article>
-            ))}
-          </div>
-        </section>
-      ) : null}
+            <form className="budget-form" onSubmit={handleBudgetCreate}>
+              <label>
+                New budget name
+                <input value={budgetForm.name} onChange={(e) => setBudgetForm((prev) => ({ ...prev, name: e.target.value }))} />
+              </label>
+              <label>
+                Allocation (USD)
+                <input
+                  type="number"
+                  min="0"
+                  value={budgetForm.allocatedAmount}
+                  onChange={(e) => setBudgetForm((prev) => ({ ...prev, allocatedAmount: e.target.value }))}
+                />
+              </label>
+              <button className="primary" type="submit">
+                Create budget
+              </button>
+            </form>
+          </section>
 
-      {activeBudget ? (
-        <section className="grid stats">
-          <article className="card">
-            <p className="muted">Actual balance</p>
-            <h2>${transactionTotals.actual.toFixed(2)}</h2>
-          </article>
-          <article className="card">
-            <p className="muted">Projected balance</p>
-            <h2>${transactionTotals.projected.toFixed(2)}</h2>
-          </article>
-          <article className="card">
-            <p className="muted">Deadline status</p>
-            <h2>{deadlines.length} upcoming</h2>
-          </article>
-          <article className="card">
-            <p className="muted">Events planned</p>
-            <h2>{events.length}</h2>
-          </article>
-        </section>
-      ) : null}
+          {archivedBudgets.length ? (
+            <section className="card">
+              <div className="section-header">
+                <div>
+                  <h3>Previous academic years</h3>
+                  <p className="muted">Browse older budgets without losing access.</p>
+                </div>
+              </div>
+              <div className="archived-grid">
+                {archivedBudgets.map((budget) => (
+                  <article key={budget.id} className="archived-card">
+                    <h4>{budget.name}</h4>
+                    <p className="muted">{budget.academicLabel}</p>
+                    <p>Final balance ${budget.actualBalance.toFixed(2)}</p>
+                    <button className="secondary" onClick={() => setSelectedBudgetId(budget.id)}>
+                      Open budget
+                    </button>
+                  </article>
+                ))}
+              </div>
+            </section>
+          ) : null}
 
-      <section className="card">
-        <div className="section-header">
-          <div>
-            <h3>Transactions</h3>
-            <p className="muted">Track incomes, expenses, recurring or planned entries.</p>
-          </div>
-        </div>
-        <form className="grid form-grid" onSubmit={handleTransactionSubmit}>
+          <section className="card">
+            <div className="section-header">
+              <div>
+                <h3>Transactions</h3>
+                <p className="muted">Track incomes, expenses, recurring or planned entries.</p>
+              </div>
+              {activeBudget ? <span className="badge bg-light text-dark">{transactions.length} entries</span> : null}
+            </div>
+            <form className="grid form-grid" onSubmit={handleTransactionSubmit}>
           <label>
             Type
             <select value={transactionForm.type} onChange={(e) => setTransactionForm((prev) => ({ ...prev, type: e.target.value }))}>
@@ -362,57 +433,64 @@ export default function DashboardPage() {
           </div>
         </form>
 
-        <div className="table-wrapper">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Type</th>
-                <th>Status</th>
-                <th>Amount</th>
-                <th>Category</th>
-                <th>Date</th>
-                <th>Event</th>
-                <th>Notes</th>
-                <th>Receipt</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {transactions.map((tx) => (
-                <tr key={tx.id}>
-                  <td>{tx.type}</td>
-                  <td>
-                    <span className={`tag tag--${tx.status}`}>{tx.status}</span>
-                  </td>
-                  <td>${tx.amount.toFixed(2)}</td>
-                  <td>{tx.category}</td>
-                  <td>{asLocalString(tx.timestamp)}</td>
-                  <td>{tx.eventName || '—'}</td>
-                  <td>{tx.notes || '—'}</td>
-                  <td>
-                    <ReceiptUploader transactionId={tx.id} receiptUrl={tx.receiptUrl} uploadReceipt={uploadReceipt} />
-                  </td>
-                  <td className="row-actions">
-                    <button className="link" type="button" onClick={() => onEditTransaction(tx)}>
-                      Edit
-                    </button>
-                    <button className="link danger" type="button" onClick={() => deleteTransaction(tx.id)}>
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
+            <div className="table-wrapper">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Type</th>
+                    <th>Status</th>
+                    <th>Amount</th>
+                    <th>Category</th>
+                    <th>Date</th>
+                    <th>Event</th>
+                    <th>Notes</th>
+                    <th>Receipt</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {transactions.map((tx) => (
+                    <tr key={tx.id}>
+                      <td>{tx.type}</td>
+                      <td>
+                        <span className={`tag tag--${tx.status}`}>{tx.status}</span>
+                      </td>
+                      <td>${tx.amount.toFixed(2)}</td>
+                      <td>{tx.category}</td>
+                      <td>{asLocalString(tx.timestamp)}</td>
+                      <td>{tx.eventName || '—'}</td>
+                      <td>{tx.notes || '—'}</td>
+                      <td>
+                        <ReceiptUploader transactionId={tx.id} receiptUrl={tx.receiptUrl} uploadReceipt={uploadReceipt} />
+                      </td>
+                      <td className="row-actions">
+                        <button className="link" type="button" onClick={() => onEditTransaction(tx)}>
+                          Edit
+                        </button>
+                        <button className="link danger" type="button" onClick={() => deleteTransaction(tx.id)}>
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
 
-      <section className="grid two-up">
-        <article className="card">
+          <section className="grid two-up stack-panels">
+            <article className="card">
           <div className="section-header">
             <div>
               <h3>Deadlines</h3>
               <p className="muted">Keep funding milestones in sight.</p>
+            </div>
+            <div className="deadline-pills">
+              {DEADLINE_STATUS_ORDER.map((status) => (
+                <span key={status} className="tag">
+                  {DEADLINE_STATUS_LABELS[status]}: {deadlineBreakdown[status] || 0}
+                </span>
+              ))}
             </div>
           </div>
           <form className="stack" onSubmit={handleDeadlineSubmit}>
@@ -479,9 +557,9 @@ export default function DashboardPage() {
               </li>
             ))}
           </ul>
-        </article>
+            </article>
 
-        <article className="card">
+            <article className="card">
           <div className="section-header">
             <div>
               <h3>Events</h3>
@@ -547,7 +625,134 @@ export default function DashboardPage() {
               </li>
             ))}
           </ul>
-        </article>
+            </article>
+          </section>
+        </div>
+
+        <aside className="dashboard-sidebar">
+          {activeBudget ? (
+            <>
+              <article className="card metric-panel">
+                <div className="section-header">
+                  <div>
+                    <h3>Budget pulse</h3>
+                    <p className="muted">Live health indicators</p>
+                  </div>
+                  <FiTrendingUp />
+                </div>
+                <div className="metric-panel__grid">
+                  <div className="metric-panel__item">
+                    <span className="metric-icon">
+                      <FiTrendingUp />
+                    </span>
+                    <p className="muted">Actual balance</p>
+                    <h3>${transactionTotals.actual.toFixed(2)}</h3>
+                  </div>
+                  <div className="metric-panel__item">
+                    <span className="metric-icon">
+                      <FiArrowUpRight />
+                    </span>
+                    <p className="muted">Projected balance</p>
+                    <h3>${transactionTotals.projected.toFixed(2)}</h3>
+                  </div>
+                  {budgetHealth ? (
+                    <div className="metric-panel__item">
+                      <span className="metric-icon">
+                        <FiCalendar />
+                      </span>
+                      <p className="muted">Allocation used</p>
+                      <h3>{Math.round(Math.min(budgetHealth.utilization, 1) * 100)}%</h3>
+                      <div className="progress">
+                        <div className="progress__bar" style={{ width: `${Math.min(budgetHealth.utilization, 1) * 100}%` }} />
+                      </div>
+                    </div>
+                  ) : null}
+                  <div className="metric-panel__item">
+                    <span className="metric-icon">
+                      <FiTrendingUp />
+                    </span>
+                    <p className="muted">Events planned</p>
+                    <h3>{events.length}</h3>
+                  </div>
+                </div>
+              </article>
+
+              <article className="card">
+                <div className="section-header">
+                  <div>
+                    <h3>Upcoming cash flow</h3>
+                    <p className="muted">Next {projectionWindowDays} days</p>
+                  </div>
+                  <span className="badge bg-light text-dark">
+                    {upcomingSummary.count} entries
+                  </span>
+                </div>
+                {analytics.upcoming?.length ? (
+                  <ul className="timeline">
+                    {analytics.upcoming.map((tx) => (
+                      <li key={tx.id}>
+                        <div>
+                          <strong>{format(tx.timestamp * 1000, 'PPpp')}</strong>
+                          <p className="muted">
+                            {tx.category}
+                            {tx.eventName ? ` · ${tx.eventName}` : ''}
+                          </p>
+                        </div>
+                        <div className="timeline__meta">
+                          <span className={`tag tag--${tx.type}`}>{tx.type}</span>
+                          <span className="timeline__amount">{tx.type === 'income' ? '+' : '-'}${tx.amount.toFixed(2)}</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="muted">No planned or recurring transactions yet.</p>
+                )}
+              </article>
+
+              <article className="card status-card">
+                <div className="section-header">
+                  <div>
+                    <h3>Insights</h3>
+                    <p className="muted">Deadlines & categories</p>
+                  </div>
+                </div>
+                <div className="deadline-pills">
+                  {DEADLINE_STATUS_ORDER.map((status) => (
+                    <span key={status} className="tag">
+                      {DEADLINE_STATUS_LABELS[status]}: {deadlineBreakdown[status] || 0}
+                    </span>
+                  ))}
+                </div>
+                <div className="insight-cards">
+                  {topCategory ? (
+                    <div className="insight">
+                      <p className="muted">Top category</p>
+                      <strong>{topCategory.category}</strong>
+                      <p className="muted">
+                        ${topCategory.incomes.toFixed(2)} in · ${topCategory.expenses.toFixed(2)} out
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="muted">Track some transactions to unlock insights.</p>
+                  )}
+                  {nextDeadline ? (
+                    <div className="insight">
+                      <p className="muted">Next deadline</p>
+                      <strong>{nextDeadline.title}</strong>
+                      <p className="muted">{format(nextDeadline.dueTimestamp * 1000, 'PPpp')}</p>
+                    </div>
+                  ) : null}
+                </div>
+              </article>
+            </>
+          ) : (
+            <article className="card text-center">
+              <h3>Set up a budget</h3>
+              <p className="muted">Create your first academic year budget to unlock analytics, exports, and insights.</p>
+            </article>
+          )}
+        </aside>
       </section>
 
       <section className="grid two-up">

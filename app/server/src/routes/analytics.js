@@ -10,6 +10,26 @@ router.get('/overview', authenticate, (req, res) => {
   if (!budget) {
     return res.status(404).json({ message: 'Budget not found' });
   }
+  const summaryStmt = db.prepare(`
+    SELECT
+      SUM(CASE WHEN type = 'income' AND status = 'actual' THEN amount_cents ELSE 0 END) AS actual_income,
+      SUM(CASE WHEN type = 'expense' AND status = 'actual' THEN amount_cents ELSE 0 END) AS actual_expense,
+      SUM(CASE WHEN type = 'income' THEN amount_cents ELSE 0 END) AS projected_income,
+      SUM(CASE WHEN type = 'expense' THEN amount_cents ELSE 0 END) AS projected_expense
+    FROM transactions
+    WHERE budget_id = ?
+  `);
+  const summary = summaryStmt.get(budgetId) || {};
+  const balance = {
+    allocated: budget.allocated_amount / 100,
+    actualIncome: (summary.actual_income || 0) / 100,
+    actualExpense: (summary.actual_expense || 0) / 100,
+    projectedIncome: (summary.projected_income || 0) / 100,
+    projectedExpense: (summary.projected_expense || 0) / 100
+  };
+  balance.actualNet = balance.actualIncome - balance.actualExpense;
+  balance.projectedNet = balance.projectedIncome - balance.projectedExpense;
+  balance.utilization = balance.allocated > 0 ? balance.actualExpense / balance.allocated : 0;
   const categoryStmt = db.prepare(`
     SELECT category,
       SUM(CASE WHEN type = 'expense' THEN amount_cents ELSE 0 END) AS expense_cents,
@@ -46,8 +66,30 @@ router.get('/overview', authenticate, (req, res) => {
     acc[row.status] = row.count;
     return acc;
   }, {});
+  const nowTs = Math.floor(Date.now() / 1000);
+  const horizonDays = 30;
+  const futureTs = nowTs + horizonDays * 24 * 60 * 60;
+  const upcomingStmt = db.prepare(`
+    SELECT t.*, e.name AS event_name
+    FROM transactions t
+    LEFT JOIN events e ON e.id = t.event_id
+    WHERE t.budget_id = ?
+      AND t.status IN ('planned', 'recurring')
+      AND t.timestamp BETWEEN ? AND ?
+    ORDER BY t.timestamp ASC
+    LIMIT 10
+  `);
+  const upcoming = upcomingStmt.all(budgetId, nowTs, futureTs).map((row) => ({
+    id: row.id,
+    type: row.type,
+    status: row.status,
+    amount: row.amount_cents / 100,
+    category: row.category,
+    timestamp: row.timestamp,
+    eventName: row.event_name || null
+  }));
 
-  res.json({ categories, trend, deadlineCounts });
+  res.json({ categories, trend, deadlineCounts, balance, upcoming, projectionWindowDays: horizonDays });
 });
 
 export default router;

@@ -2,6 +2,23 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import api from '../api/client.js';
 
 const API_ROOT = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+const ANALYTICS_DEFAULT = {
+  categories: [],
+  trend: [],
+  deadlineCounts: {},
+  balance: null,
+  upcoming: [],
+  projectionWindowDays: 30
+};
+
+const normalizeAnalytics = (payload = {}) => ({
+  categories: payload.categories || [],
+  trend: payload.trend || [],
+  deadlineCounts: payload.deadlineCounts || {},
+  balance: payload.balance || null,
+  upcoming: payload.upcoming || [],
+  projectionWindowDays: payload.projectionWindowDays || ANALYTICS_DEFAULT.projectionWindowDays
+});
 
 function withReceiptUrl(transaction) {
   if (!transaction.receiptPath) {
@@ -24,7 +41,7 @@ export default function useDashboardData() {
   const [transactions, setTransactions] = useState([]);
   const [deadlines, setDeadlines] = useState([]);
   const [events, setEvents] = useState([]);
-  const [analytics, setAnalytics] = useState({ categories: [], trend: [], deadlineCounts: {} });
+  const [analytics, setAnalytics] = useState(ANALYTICS_DEFAULT);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -56,9 +73,9 @@ export default function useDashboardData() {
           api.get('/analytics/overview', { params: { budgetId } })
         ]);
         setTransactions(txRes.data.filter((tx) => tx.budgetId === budgetId).map(withReceiptUrl));
-        setDeadlines(dlRes.data.filter((dl) => dl.budgetId === budgetId));
-        setEvents(evRes.data.filter((ev) => ev.budgetId === budgetId));
-        setAnalytics(analyticsRes.data);
+  setDeadlines(dlRes.data.filter((dl) => dl.budgetId === budgetId));
+  setEvents(evRes.data.filter((ev) => ev.budgetId === budgetId));
+  setAnalytics(normalizeAnalytics(analyticsRes.data));
       } catch (err) {
         setError(handleError(err));
       } finally {
