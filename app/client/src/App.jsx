@@ -5,7 +5,14 @@ import DashboardPage from './pages/DashboardPage.jsx';
 import { useAuth } from './context/AuthContext.jsx';
 
 function PrivateRoute({ children }) {
-  const { user } = useAuth();
+  const { user, initializing } = useAuth();
+  if (initializing) {
+    return (
+      <div className="screen-center">
+        <p>Checking your session…</p>
+      </div>
+    );
+  }
   if (!user) {
     return <Navigate to="/login" replace />;
   }

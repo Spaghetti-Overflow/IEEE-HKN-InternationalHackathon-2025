@@ -1,10 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 
 export default function RegisterPage() {
   const navigate = useNavigate();
-  const { register } = useAuth();
+  const { register, user, initializing } = useAuth();
   const defaultTimezone = useMemo(() => {
     try {
       return Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -15,6 +15,12 @@ export default function RegisterPage() {
   const [form, setForm] = useState({ username: '', password: '', displayName: '', timezone: defaultTimezone });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!initializing && user) {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [initializing, user, navigate]);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -35,6 +41,16 @@ export default function RegisterPage() {
       setLoading(false);
     }
   };
+
+  if (initializing) {
+    return (
+      <main className="auth-screen">
+        <section className="card auth-card">
+          <p className="muted">Checking your session…</p>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main className="auth-screen">

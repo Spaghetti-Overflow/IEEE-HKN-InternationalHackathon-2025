@@ -5,8 +5,31 @@ import { body, validationResult } from 'express-validator';
 import { db } from '../db.js';
 import { config } from '../config.js';
 import { now } from '../utils/time.js';
+import { authenticate } from '../middleware/auth.js';
 
 const router = Router();
+
+function formatUser(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    username: row.username,
+    displayName: row.display_name,
+    timezone: row.timezone
+  };
+}
+
+function issueSession(res, user) {
+  const payload = { id: user.id, username: user.username, timezone: user.timezone };
+  const token = jwt.sign(payload, config.jwtSecret, { expiresIn: config.authTokenTtlSeconds });
+  res.cookie(config.authCookieName, token, {
+    httpOnly: true,
+    secure: config.authCookieSecure,
+    sameSite: 'lax',
+    maxAge: config.authCookieMaxAgeMs
+  });
+  return { expiresAt: Date.now() + config.authCookieMaxAgeMs };
+}
 
 const registerValidators = [
   body('username').isLength({ min: 3 }).withMessage('Username too short'),
@@ -41,8 +64,11 @@ router.post('/register', registerValidators, (req, res) => {
     created_at: now()
   });
 
-  const token = jwt.sign({ id: info.lastInsertRowid, username }, config.jwtSecret, { expiresIn: '12h' });
-  return res.status(201).json({ token, user: { id: info.lastInsertRowid, username, displayName: displayName || username } });
+  const createdUser = db
+    .prepare('SELECT id, username, display_name, timezone FROM users WHERE id = ?')
+    .get(info.lastInsertRowid);
+  const session = issueSession(res, createdUser);
+  return res.status(201).json({ user: formatUser(createdUser), session });
 });
 
 router.post(
@@ -60,17 +86,26 @@ router.post(
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    const token = jwt.sign({ id: user.id, username: user.username }, config.jwtSecret, { expiresIn: '12h' });
-    return res.json({
-      token,
-      user: {
-        id: user.id,
-        username: user.username,
-        displayName: user.display_name,
-        timezone: user.timezone
-      }
-    });
+    const session = issueSession(res, user);
+    return res.json({ user: formatUser(user), session });
   }
 );
+
+router.get('/me', authenticate, (req, res) => {
+  const user = db.prepare('SELECT id, username, display_name, timezone FROM users WHERE id = ?').get(req.user.id);
+  if (!user) {
+    return res.status(404).json({ message: 'User not found' });
+  }
+  res.json({ user: formatUser(user) });
+});
+
+router.post('/logout', authenticate, (req, res) => {
+  res.clearCookie(config.authCookieName, {
+    httpOnly: true,
+    secure: config.authCookieSecure,
+    sameSite: 'lax'
+  });
+  res.json({ message: 'Logged out' });
+});
 
 export default router;

@@ -73,9 +73,9 @@ export default function useDashboardData() {
           api.get('/analytics/overview', { params: { budgetId } })
         ]);
         setTransactions(txRes.data.filter((tx) => tx.budgetId === budgetId).map(withReceiptUrl));
-  setDeadlines(dlRes.data.filter((dl) => dl.budgetId === budgetId));
-  setEvents(evRes.data.filter((ev) => ev.budgetId === budgetId));
-  setAnalytics(normalizeAnalytics(analyticsRes.data));
+        setDeadlines(dlRes.data.filter((dl) => dl.budgetId === budgetId));
+        setEvents(evRes.data.filter((ev) => ev.budgetId === budgetId));
+        setAnalytics(normalizeAnalytics(analyticsRes.data));
       } catch (err) {
         setError(handleError(err));
       } finally {
@@ -95,11 +95,12 @@ export default function useDashboardData() {
     }
   }, [selectedBudgetId, fetchBudgetScopedData]);
 
-  const refreshActiveBudget = useCallback(() => {
-    if (selectedBudgetId) {
-      fetchBudgetScopedData(selectedBudgetId);
+  const refreshActiveBudget = useCallback(async () => {
+    if (!selectedBudgetId) {
+      return;
     }
-  }, [fetchBudgetScopedData, selectedBudgetId]);
+    await Promise.all([fetchBudgetScopedData(selectedBudgetId), fetchBudgets()]);
+  }, [fetchBudgetScopedData, fetchBudgets, selectedBudgetId]);
 
   const createBudget = async (payload) => {
     try {
@@ -138,7 +139,7 @@ export default function useDashboardData() {
       } else {
         await api.post('/transactions', payload);
       }
-      refreshActiveBudget();
+      await refreshActiveBudget();
     } catch (err) {
       setError(handleError(err));
     }
@@ -147,7 +148,7 @@ export default function useDashboardData() {
   const deleteTransaction = async (id) => {
     try {
       await api.delete(`/transactions/${id}`);
-      refreshActiveBudget();
+      await refreshActiveBudget();
     } catch (err) {
       setError(handleError(err));
     }
@@ -160,6 +161,7 @@ export default function useDashboardData() {
       await api.post(`/transactions/${id}/receipt`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
+      await refreshActiveBudget();
     } catch (err) {
       setError(handleError(err));
       throw err;
@@ -173,7 +175,7 @@ export default function useDashboardData() {
       } else {
         await api.post('/deadlines', payload);
       }
-      refreshActiveBudget();
+      await refreshActiveBudget();
     } catch (err) {
       setError(handleError(err));
     }
@@ -182,7 +184,7 @@ export default function useDashboardData() {
   const deleteDeadline = async (id) => {
     try {
       await api.delete(`/deadlines/${id}`);
-      refreshActiveBudget();
+      await refreshActiveBudget();
     } catch (err) {
       setError(handleError(err));
     }
@@ -195,7 +197,7 @@ export default function useDashboardData() {
       } else {
         await api.post('/events', payload);
       }
-      refreshActiveBudget();
+      await refreshActiveBudget();
     } catch (err) {
       setError(handleError(err));
     }
@@ -204,7 +206,7 @@ export default function useDashboardData() {
   const deleteEvent = async (id) => {
     try {
       await api.delete(`/events/${id}`);
-      refreshActiveBudget();
+      await refreshActiveBudget();
     } catch (err) {
       setError(handleError(err));
     }

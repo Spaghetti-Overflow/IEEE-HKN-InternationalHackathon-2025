@@ -4,11 +4,16 @@ import { db } from '../db.js';
 
 export function authenticate(req, res, next) {
   const header = req.headers.authorization;
-  if (!header?.startsWith('Bearer ')) {
-    return res.status(401).json({ message: 'Missing token' });
+  let token = null;
+  if (header?.startsWith('Bearer ')) {
+    token = header.replace('Bearer ', '');
+  } else if (req.cookies?.[config.authCookieName]) {
+    token = req.cookies[config.authCookieName];
   }
 
-  const token = header.replace('Bearer ', '');
+  if (!token) {
+    return res.status(401).json({ message: 'Missing token' });
+  }
   try {
     const decoded = jwt.verify(token, config.jwtSecret);
     req.user = decoded;

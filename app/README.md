@@ -7,7 +7,7 @@ Full-stack web app (React + Express + SQLite) that helps IEEE-HKN chapters plan 
 - **Client**: Vite + React 18, React Router, Recharts, Axios.
 - **Server**: Express 4, better-sqlite3, JWT auth, PDFKit for reporting, Multer for receipt uploads.
 - **Database**: SQLite (WAL mode) with tables for users, budgets, events, transactions, deadlines, attachments.
-- **Auth**: Username/password with bcrypt hashing and JWT-based sessions.
+- **Auth**: Username/password with bcrypt hashing and JWT sessions stored in HTTP-only cookies (configurable TTL + secure flag).
 
 ```
 app/
@@ -27,7 +27,7 @@ app/
 | Multiple budgets | ✅ | Users can own many budgets, switch active one, browse archived academic years. |
 | Receipt management | ✅ | Upload and view receipts (images/PDFs) per transaction. |
 | Analytics & charts | ✅ | Category split bar chart + monthly trend line chart + deadline counters. |
-| Authentication | ✅ | Register/login, password hashing, JWT, timezone auto-capture. |
+| Authentication | ✅ | Register/login, password hashing, JWT stored in HTTP-only cookies, timezone auto-capture. |
 | Academic year linkage | ✅ | Budgets auto-bound to academic years; archived section exposes older years. |
 | Local time display | ✅ | Timestamps stored as UNIX seconds; browser timezone captured and UI renders local strings. |
 | Containerization | 🔜 | Dockerfiles will follow after code stabilization. |
@@ -44,6 +44,7 @@ app/
    cd app/server
    cp .env.example .env
    ```
+   > Sessions rely on HTTP-only cookies. Ensure `CLIENT_ORIGIN` matches the URL of the React app and tune `AUTH_TOKEN_TTL` / `AUTH_COOKIE_SECURE` for your environment.
 2. Install dependencies:
    ```bash
    npm install
@@ -92,7 +93,9 @@ Open the provided Vite URL (default `http://localhost:5173`).
 | Method | Path | Description |
 | --- | --- | --- |
 | POST | `/api/auth/register` | Create user (stores timezone). |
-| POST | `/api/auth/login` | Obtain JWT. |
+| POST | `/api/auth/login` | Start cookie session + return profile. |
+| GET | `/api/auth/me` | Resolve the signed-in user via cookie. |
+| POST | `/api/auth/logout` | Clear the session cookie. |
 | GET | `/api/budgets` | List budgets with academic metadata + balances. |
 | GET | `/api/budgets/archived` | Filtered archived budgets. |
 | CRUD | `/api/transactions` | Income/expense management + receipt upload (`/receipt`). |
