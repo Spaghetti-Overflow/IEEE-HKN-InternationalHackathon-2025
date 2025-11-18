@@ -1,4 +1,5 @@
-import { FiDownloadCloud, FiFileText, FiLogOut } from 'react-icons/fi';
+import { FiDownloadCloud, FiFileText, FiLogOut, FiShield } from 'react-icons/fi';
+import { Link } from 'react-router-dom';
 import { format, formatDistanceToNow } from 'date-fns';
 
 const NAV_ITEMS = [
@@ -82,6 +83,9 @@ export default function DashboardHeader({
           ) : (
             <span className="muted small">Create a budget to enable exports</span>
           )}
+          <Link className="btn btn-outline-primary" to="/security">
+            <FiShield /> Security
+          </Link>
           <button className="btn btn-outline-dark" onClick={logout}>
             <FiLogOut /> Logout ({user?.displayName || user?.username})
           </button>

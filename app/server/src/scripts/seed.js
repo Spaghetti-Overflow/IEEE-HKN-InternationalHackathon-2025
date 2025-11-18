@@ -1,9 +1,12 @@
 import bcrypt from 'bcryptjs';
-import { db, initializeDatabase, pool } from '../db.js';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { db, pool } from '../db.js';
 import { now, getAcademicYearBounds } from '../utils/time.js';
+import { seedBase } from './seedBase.js';
 
-async function seed() {
-  await initializeDatabase();
+export async function seedDemo() {
+  await seedBase({ log: false });
 
   const {
     rows: [existing]
@@ -11,7 +14,7 @@ async function seed() {
 
   if (existing) {
     console.log('Demo user already exists');
-    return;
+    return existing;
   }
 
   const passwordHash = bcrypt.hashSync('hackathon', 10);
@@ -65,13 +68,22 @@ async function seed() {
   );
 
   console.log('Seeded demo user (username: demo, password: hackathon)');
+  return user;
 }
 
-seed()
-  .catch((error) => {
-    console.error('Seed failed:', error);
+async function runSeedDemo() {
+  try {
+    await seedDemo();
+    console.log('Demo seed complete.');
+  } catch (error) {
+    console.error('Demo seed failed:', error);
     process.exitCode = 1;
-  })
-  .finally(async () => {
+  } finally {
     await pool.end();
-  });
+  }
+}
+
+const isCli = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isCli) {
+  runSeedDemo();
+}

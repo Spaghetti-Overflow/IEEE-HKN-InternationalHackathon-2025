@@ -23,12 +23,38 @@ export function AuthProvider({ children }) {
 
   const login = async (credentials) => {
     const { data } = await api.post('/auth/login', credentials);
+    if (data.requiresTotp) {
+      return data;
+    }
+    setUser(data.user);
+    return data;
+  };
+
+  const completeTotpLogin = async ({ code, challengeToken }) => {
+    const { data } = await api.post('/auth/login/totp', { code, challengeToken });
     setUser(data.user);
     return data;
   };
 
   const register = async (payload) => {
     const { data } = await api.post('/auth/register', payload);
+    setUser(data.user);
+    return data;
+  };
+
+  const requestTotpSetup = async () => {
+    const { data } = await api.post('/auth/totp/setup');
+    return data;
+  };
+
+  const verifyTotpSetup = async ({ code }) => {
+    const { data } = await api.post('/auth/totp/verify', { code });
+    setUser(data.user);
+    return data;
+  };
+
+  const disableTotp = async ({ code }) => {
+    const { data } = await api.post('/auth/totp/disable', { code });
     setUser(data.user);
     return data;
   };
@@ -41,7 +67,17 @@ export function AuthProvider({ children }) {
     }
   };
 
-  const value = { user, initializing, login, logout, register };
+  const value = {
+    user,
+    initializing,
+    login,
+    completeTotpLogin,
+    requestTotpSetup,
+    verifyTotpSetup,
+    disableTotp,
+    logout,
+    register
+  };
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

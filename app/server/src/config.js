@@ -40,7 +40,8 @@ export const config = {
   clientOrigins,
   authCookieName: process.env.AUTH_COOKIE_NAME || 'hkn_budget_token',
   authTokenTtlSeconds: process.env.AUTH_TOKEN_TTL ? Number(process.env.AUTH_TOKEN_TTL) : 60 * 60 * 12,
-  authCookieSecure: process.env.AUTH_COOKIE_SECURE === 'true' || process.env.NODE_ENV === 'production'
+  authCookieSecure: process.env.AUTH_COOKIE_SECURE === 'true' || process.env.NODE_ENV === 'production',
+  totpIssuer: process.env.TOTP_ISSUER || 'Budget HQ'
 };
 
 config.authCookieMaxAgeMs = config.authTokenTtlSeconds * 1000;

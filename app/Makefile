@@ -4,7 +4,7 @@ DB_USER ?= postgres
 DB_NAME ?= budgetdb
 DC := $(DOCKER_COMPOSE) -f $(COMPOSE_FILE)
 
-.PHONY: help build up down restart logs ps seed server-shell client-shell db-shell clean
+.PHONY: help build up down restart logs ps seed base_seed demo_seed server-shell client-shell db-shell clean
 
 help:
 	@echo "Usage: make <target>"
@@ -16,7 +16,9 @@ help:
 	@echo "  restart      Restart the stack (down + up)"
 	@echo "  logs         Tail logs from all services"
 	@echo "  ps           Show container status"
-	@echo "  seed         Run the server seed script inside a one-off container"
+	@echo "  seed         Run the demo seed script (alias of demo_seed)"
+	@echo "  demo_seed    Seed the database with demo/sample data"
+	@echo "  base_seed    Seed the database with only the base admin user"
 	@echo "  server-shell Drop into a shell inside the server container"
 	@echo "  client-shell Drop into a shell inside the client container"
 	@echo "  db-shell     Open psql in the Postgres container"
@@ -41,8 +43,13 @@ restart:
 	$(DC) down
 	$(DC) up --build -d
 
-seed:
-	$(DC) run --rm server npm run db:seed
+seed: demo_seed
+
+demo_seed:
+	$(DC) run --build --rm server npm run db:seed:demo
+
+base_seed:
+	$(DC) run --build --rm server npm run db:seed:base
 
 server-shell:
 	$(DC) exec server sh

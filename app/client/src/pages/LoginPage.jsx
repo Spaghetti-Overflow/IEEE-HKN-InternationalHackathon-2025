@@ -4,11 +4,13 @@ import { useAuth } from '../context/AuthContext.jsx';
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const { login, user, initializing } = useAuth();
+  const { login, completeTotpLogin, user, initializing } = useAuth();
   const [form, setForm] = useState({ username: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [challengeToken, setChallengeToken] = useState(null);
+  const [totpCode, setTotpCode] = useState('');
 
   useEffect(() => {
     if (!initializing && user) {
@@ -26,10 +28,32 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
     try {
-      await login(form);
+      const result = await login(form);
+      if (result?.requiresTotp) {
+        setChallengeToken(result.challengeToken);
+        setTotpCode('');
+        return;
+      }
       navigate('/dashboard');
     } catch (err) {
       const message = err?.response?.data?.message || 'Unable to login';
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleTotpSubmit = async (event) => {
+    event.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      await completeTotpLogin({ code: totpCode, challengeToken });
+      setChallengeToken(null);
+      setTotpCode('');
+      navigate('/dashboard');
+    } catch (err) {
+      const message = err?.response?.data?.message || 'Invalid verification code';
       setError(message);
     } finally {
       setLoading(false);
@@ -94,53 +118,91 @@ export default function LoginPage() {
 
             {error ? <p className="error-text">{error}</p> : null}
 
-            <form className="stack" onSubmit={handleSubmit}>
-              <label>
-                Username
-                <input
-                  name="username"
-                  value={form.username}
-                  onChange={handleChange}
-                  required
-                  autoComplete="username"
-                  placeholder="finance-chair"
-                />
-              </label>
-              <label className="password-field">
-                Password
-                <div className="input-with-addon">
+            {challengeToken ? (
+              <form className="stack" onSubmit={handleTotpSubmit}>
+                <p className="muted">
+                  Enter the 6-digit verification code from your authenticator app to finish signing in.
+                </p>
+                <label>
+                  Verification code
                   <input
-                    type={showPassword ? 'text' : 'password'}
-                    name="password"
-                    value={form.password}
-                    onChange={handleChange}
+                    name="totp"
+                    inputMode="numeric"
+                    pattern="[0-9]{6}"
+                    placeholder="123 456"
+                    maxLength={6}
+                    value={totpCode}
+                    onChange={(event) => setTotpCode(event.target.value)}
                     required
-                    autoComplete="current-password"
-                    placeholder="••••••••"
+                    autoComplete="one-time-code"
                   />
+                </label>
+                <div className="form-utility-row">
                   <button
                     type="button"
-                    className="ghost-btn"
-                    onClick={() => setShowPassword((prev) => !prev)}
-                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    className="ghost-link"
+                    onClick={() => {
+                      setChallengeToken(null);
+                      setTotpCode('');
+                      setError(null);
+                    }}
                   >
-                    {showPassword ? 'Hide' : 'Show'}
+                    ← Back to password
                   </button>
                 </div>
-              </label>
-              <div className="form-utility-row">
-                <label className="checkbox-pill">
-                  <input type="checkbox" />
-                  <span>Remember me for 30 days</span>
-                </label>
-                <button type="button" className="ghost-link">
-                  Forgot password?
+                <button className="primary block" type="submit" disabled={loading}>
+                  {loading ? 'Verifying…' : 'Verify and continue'}
                 </button>
-              </div>
-              <button className="primary block" type="submit" disabled={loading}>
-                {loading ? 'Signing in…' : 'Sign in'}
-              </button>
-            </form>
+              </form>
+            ) : (
+              <form className="stack" onSubmit={handleSubmit}>
+                <label>
+                  Username
+                  <input
+                    name="username"
+                    value={form.username}
+                    onChange={handleChange}
+                    required
+                    autoComplete="username"
+                    placeholder="finance-chair"
+                  />
+                </label>
+                <label className="password-field">
+                  Password
+                  <div className="input-with-addon">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      name="password"
+                      value={form.password}
+                      onChange={handleChange}
+                      required
+                      autoComplete="current-password"
+                      placeholder="••••••••"
+                    />
+                    <button
+                      type="button"
+                      className="ghost-btn"
+                      onClick={() => setShowPassword((prev) => !prev)}
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showPassword ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
+                </label>
+                <div className="form-utility-row">
+                  <label className="checkbox-pill">
+                    <input type="checkbox" />
+                    <span>Remember me for 30 days</span>
+                  </label>
+                  <button type="button" className="ghost-link">
+                    Forgot password?
+                  </button>
+                </div>
+                <button className="primary block" type="submit" disabled={loading}>
+                  {loading ? 'Signing in…' : 'Sign in'}
+                </button>
+              </form>
+            )}
 
             <div className="auth-footer">
               <p className="muted">

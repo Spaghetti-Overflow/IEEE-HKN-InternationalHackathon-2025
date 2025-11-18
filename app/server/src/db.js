@@ -40,6 +40,10 @@ export async function initializeDatabase() {
         created_at BIGINT NOT NULL
       )
     `);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret TEXT`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN DEFAULT FALSE`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_verified_at BIGINT`);
+  await client.query(`UPDATE users SET totp_enabled = FALSE WHERE totp_enabled IS NULL`);
     await client.query(`
       CREATE TABLE IF NOT EXISTS budgets (
         id SERIAL PRIMARY KEY,
