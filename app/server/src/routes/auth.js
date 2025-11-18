@@ -2,9 +2,10 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { body, validationResult } from 'express-validator';
+import rateLimit from 'express-rate-limit';
 import { db } from '../db.js';
 import { config } from '../config.js';
-import { now } from '../utils/time.js';
+import { now, isValidTimezone } from '../utils/time.js';
 import { authenticate } from '../middleware/auth.js';
 
 const router = Router();
@@ -31,57 +32,66 @@ function issueSession(res, user) {
   return { expiresAt: Date.now() + config.authCookieMaxAgeMs };
 }
 
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 25,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Too many auth attempts. Please wait before retrying.' }
+});
+
 const registerValidators = [
   body('username').isLength({ min: 3 }).withMessage('Username too short'),
   body('password').isLength({ min: 6 }).withMessage('Password too short'),
   body('displayName').optional().isLength({ min: 2 }),
-  body('timezone').optional().isString()
+  body('timezone')
+    .optional()
+    .isString()
+    .custom((value) => isValidTimezone(value))
+    .withMessage('Invalid timezone')
 ];
 
-router.post('/register', registerValidators, (req, res) => {
+router.post('/register', authLimiter, registerValidators, async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
   }
 
   const { username, password, displayName, timezone } = req.body;
-  const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+  const {
+    rows: [existing]
+  } = await db.query('SELECT id FROM users WHERE username = $1', [username]);
   if (existing) {
     return res.status(409).json({ message: 'Username already taken' });
   }
 
   const passwordHash = bcrypt.hashSync(password, 10);
-  const stmt = db.prepare(`
-    INSERT INTO users (username, password_hash, display_name, timezone, created_at)
-    VALUES (@username, @password_hash, @display_name, @timezone, @created_at)
-  `);
-
-  const info = stmt.run({
-    username,
-    password_hash: passwordHash,
-    display_name: displayName || username,
-    timezone: timezone || 'UTC',
-    created_at: now()
-  });
-
-  const createdUser = db
-    .prepare('SELECT id, username, display_name, timezone FROM users WHERE id = ?')
-    .get(info.lastInsertRowid);
-  const session = issueSession(res, createdUser);
-  return res.status(201).json({ user: formatUser(createdUser), session });
+  const {
+    rows: [created]
+  } = await db.query(
+    `INSERT INTO users (username, password_hash, display_name, timezone, created_at)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING id, username, display_name, timezone`,
+    [username, passwordHash, displayName || username, timezone || 'UTC', now()]
+  );
+  const session = issueSession(res, created);
+  return res.status(201).json({ user: formatUser(created), session });
 });
 
 router.post(
   '/login',
+  authLimiter,
   [body('username').notEmpty(), body('password').notEmpty()],
-  (req, res) => {
+  async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
     }
 
     const { username, password } = req.body;
-    const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+    const {
+      rows: [user]
+    } = await db.query('SELECT * FROM users WHERE username = $1', [username]);
     if (!user || !bcrypt.compareSync(password, user.password_hash)) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
@@ -91,8 +101,10 @@ router.post(
   }
 );
 
-router.get('/me', authenticate, (req, res) => {
-  const user = db.prepare('SELECT id, username, display_name, timezone FROM users WHERE id = ?').get(req.user.id);
+router.get('/me', authenticate, async (req, res) => {
+  const {
+    rows: [user]
+  } = await db.query('SELECT id, username, display_name, timezone FROM users WHERE id = $1', [req.user.id]);
   if (!user) {
     return res.status(404).json({ message: 'User not found' });
   }

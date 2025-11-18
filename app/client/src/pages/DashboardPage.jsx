@@ -120,10 +120,14 @@ export default function DashboardPage() {
   const handleDeadlineSubmit = async (event) => {
     event.preventDefault();
     if (!selectedBudgetId) return;
+    const link = deadlineForm.link?.trim();
+    const description = deadlineForm.description?.trim();
     const payload = {
       ...deadlineForm,
       budgetId: selectedBudgetId,
-      dueTimestamp: toUnix(deadlineForm.dueTimestamp)
+      dueTimestamp: toUnix(deadlineForm.dueTimestamp),
+      link: link ? link : undefined,
+      description: description ? description : undefined
     };
     await saveDeadline(payload, editingDeadline);
     setDeadlineForm(emptyDeadline(selectedBudgetId));
@@ -133,12 +137,17 @@ export default function DashboardPage() {
   const handleEventSubmit = async (event) => {
     event.preventDefault();
     if (!selectedBudgetId) return;
+    const allocatedAmount = Number(eventForm.allocatedAmount || 0);
+    const startTsValue = eventForm.startTs ? toUnix(eventForm.startTs) : undefined;
+    const endTsValue = eventForm.endTs ? toUnix(eventForm.endTs) : undefined;
+    const notes = eventForm.notes?.trim();
     const payload = {
       ...eventForm,
       budgetId: selectedBudgetId,
-      allocatedAmount: Number(eventForm.allocatedAmount || 0),
-      startTs: toUnix(eventForm.startTs),
-      endTs: toUnix(eventForm.endTs)
+      allocatedAmount,
+      startTs: startTsValue,
+      endTs: endTsValue,
+      notes: notes ? notes : undefined
     };
     await saveEvent(payload, editingEvent);
     setEventForm(emptyEvent(selectedBudgetId));
@@ -262,18 +271,6 @@ export default function DashboardPage() {
 
       <section className="dashboard-grid">
         <div className="dashboard-main">
-          <div className="anchor-section" id="budgets">
-            <BudgetSwitcher
-              budgets={budgets}
-              selectedBudgetId={selectedBudgetId}
-              setSelectedBudgetId={setSelectedBudgetId}
-              budgetForm={budgetForm}
-              setBudgetForm={setBudgetForm}
-              handleBudgetCreate={handleBudgetCreate}
-            />
-            <ArchivedBudgets archivedBudgets={archivedBudgets} setSelectedBudgetId={setSelectedBudgetId} />
-          </div>
-
           <div className="anchor-section" id="transactions">
             <TransactionsPanel
               transactionForm={transactionForm}
@@ -290,7 +287,7 @@ export default function DashboardPage() {
             />
           </div>
 
-          <section className="grid two-up stack-panels anchor-section" id="planning">
+          <section className="anchor-section" id="planning">
             <DeadlinesPanel
               deadlineForm={deadlineForm}
               setDeadlineForm={setDeadlineForm}
@@ -315,9 +312,25 @@ export default function DashboardPage() {
               onEditEvent={onEditEvent}
             />
           </section>
+
+          <div id="analytics" className="anchor-section">
+            <ChartsSection analytics={analytics} />
+          </div>
         </div>
 
         <aside className="dashboard-sidebar">
+          <div className="anchor-section" id="budgets">
+            <BudgetSwitcher
+              budgets={budgets}
+              selectedBudgetId={selectedBudgetId}
+              setSelectedBudgetId={setSelectedBudgetId}
+              budgetForm={budgetForm}
+              setBudgetForm={setBudgetForm}
+              handleBudgetCreate={handleBudgetCreate}
+            />
+            <ArchivedBudgets archivedBudgets={archivedBudgets} setSelectedBudgetId={setSelectedBudgetId} />
+          </div>
+
           {activeBudget ? (
             <>
               <BudgetPulsePanel budgetHealth={budgetHealth} transactionTotals={transactionTotals} eventsCount={events.length} />
@@ -342,10 +355,6 @@ export default function DashboardPage() {
           )}
         </aside>
       </section>
-
-      <div id="analytics" className="anchor-section">
-        <ChartsSection analytics={analytics} />
-      </div>
 
       {loading ? <p className="muted">Refreshing data…</p> : null}
     </main>

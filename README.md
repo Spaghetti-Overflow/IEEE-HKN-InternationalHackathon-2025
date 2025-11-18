@@ -27,3 +27,8 @@ text
 | Simone Romano | [![GitHub](https://img.shields.io/badge/GitHub-Profile-informational?logo=github)](https://github.com/sroman0) | [![LinkedIn](https://img.shields.io/badge/LinkedIn-Profile-blue?logo=linkedin)](https://www.linkedin.com/in/simone-romano-383277307/) | [![Email](https://img.shields.io/badge/Email-Send-blue?logo=gmail)](mailto:simone.romano@studenti.polito.it) |
 | Eric Ruiz Giménez | [![GitHub](https://img.shields.io/badge/GitHub-Profile-informational?logo=github)](https://github.com/thismanera) | [![LinkedIn](https://img.shields.io/badge/LinkedIn-Profile-blue?logo=linkedin)](https://www.linkedin.com/in/eric-ruiz-gimenez/) | [![Email](https://img.shields.io/badge/Email-Send-blue?logo=gmail)](mailto:eric.ruizgimenez@studenti.polito.it) |
 | Claudia Sanna     | [![GitHub](https://img.shields.io/badge/GitHub-Profile-informational?logo=github)](https://github.com/sannaclaudia) | [![LinkedIn](https://img.shields.io/badge/LinkedIn-Profile-blue?logo=linkedin)](https://www.linkedin.com/in/claudiasanna1/)              | [![Email](https://img.shields.io/badge/Email-Send-blue?logo=gmail)](mailto:claudia.sanna@studenti.polito.it)    |
+
+## Repository layout
+
+- `app/`: Full-stack application (React client + Express API) plus the Docker/Makefile tooling. See `app/README.md` for build/run instructions.
+- `docs/`, `resources/`: Planning artifacts and reference material for the hackathon.

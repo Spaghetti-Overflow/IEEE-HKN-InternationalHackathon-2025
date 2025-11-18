@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { body, validationResult } from 'express-validator';
 import multer from 'multer';
-import path from 'path';
 import fs from 'fs';
 import { db } from '../db.js';
 import { authenticate } from '../middleware/auth.js';
@@ -23,25 +22,32 @@ const txValidators = [
   body('eventId').optional().isInt({ min: 1 })
 ];
 
-router.get('/', authenticate, (req, res) => {
+router.get('/', authenticate, async (req, res) => {
   const { budgetId } = req.query;
-  const budgets = db.prepare('SELECT id FROM budgets WHERE owner_id = ?').all(req.user.id).map((b) => b.id);
-  if (!budgets.length) {
+  const { rows: budgetRows } = await db.query('SELECT id FROM budgets WHERE owner_id = $1', [req.user.id]);
+  if (!budgetRows.length) {
     return res.json([]);
   }
+  const budgetIds = budgetRows.map((row) => row.id);
   const filterId = budgetId ? Number(budgetId) : null;
-  if (filterId && !budgets.includes(filterId)) {
+  if (filterId && !budgetIds.includes(filterId)) {
     return res.status(403).json({ message: 'Budget not accessible' });
   }
-  const stmt = db.prepare(`
-    SELECT t.*, e.name AS event_name
-    FROM transactions t
-    LEFT JOIN events e ON e.id = t.event_id
-    WHERE t.budget_id IN (${budgets.map(() => '?').join(',')})
-    ${filterId ? 'AND t.budget_id = ?' : ''}
-    ORDER BY t.timestamp DESC
-  `);
-  const rows = stmt.all(...budgets, ...(filterId ? [filterId] : []));
+  const params = [budgetIds];
+  let filterClause = '';
+  if (filterId) {
+    params.push(filterId);
+    filterClause = 'AND t.budget_id = $2';
+  }
+  const { rows } = await db.query(
+    `SELECT t.*, e.name AS event_name
+     FROM transactions t
+     LEFT JOIN events e ON e.id = t.event_id
+     WHERE t.budget_id = ANY($1::int[])
+     ${filterClause}
+     ORDER BY t.timestamp DESC`,
+    params
+  );
   const formatted = rows.map((row) => ({
     id: row.id,
     budgetId: row.budget_id,
@@ -61,94 +67,110 @@ router.get('/', authenticate, (req, res) => {
   res.json(formatted);
 });
 
-router.post('/', authenticate, txValidators, (req, res) => {
+router.post('/', authenticate, txValidators, async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
   }
-  const budget = db.prepare('SELECT * FROM budgets WHERE id = ? AND owner_id = ?').get(req.body.budgetId, req.user.id);
+  const {
+    rows: [budget]
+  } = await db.query('SELECT id FROM budgets WHERE id = $1 AND owner_id = $2', [req.body.budgetId, req.user.id]);
   if (!budget) {
     return res.status(404).json({ message: 'Budget not found' });
   }
-  const stmt = db.prepare(`
-    INSERT INTO transactions (
-      budget_id, event_id, user_id, type, status, amount_cents, category, notes, timestamp, recurrence_rule, created_at, updated_at
-    ) VALUES (@budget_id, @event_id, @user_id, @type, @status, @amount, @category, @notes, @timestamp, @recurrence, @created, @updated)
-  `);
-  const payload = {
-    budget_id: req.body.budgetId,
-    event_id: req.body.eventId || null,
-    user_id: req.user.id,
-    type: req.body.type,
-    status: req.body.status,
-    amount: numberFrom(req.body.amount),
-    category: req.body.category,
-    notes: req.body.notes || null,
-    timestamp: req.body.timestamp,
-    recurrence: req.body.recurrenceRule || null,
-    created: now(),
-    updated: now()
-  };
-  const info = stmt.run(payload);
-  res.status(201).json({ id: info.lastInsertRowid });
+  const createdAt = now();
+  const {
+    rows: [inserted]
+  } = await db.query(
+    `INSERT INTO transactions (
+        budget_id, event_id, user_id, type, status, amount_cents, category, notes, timestamp, recurrence_rule, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      RETURNING id`,
+    [
+      req.body.budgetId,
+      req.body.eventId || null,
+      req.user.id,
+      req.body.type,
+      req.body.status,
+      numberFrom(req.body.amount),
+      req.body.category,
+      req.body.notes || null,
+      req.body.timestamp,
+      req.body.recurrenceRule || null,
+      createdAt,
+      createdAt
+    ]
+  );
+  res.status(201).json({ id: inserted.id });
 });
 
-router.put('/:id', authenticate, txValidators, (req, res) => {
-  const transaction = db.prepare(`
-    SELECT t.* FROM transactions t
-    JOIN budgets b ON b.id = t.budget_id
-    WHERE t.id = ? AND b.owner_id = ?
-  `).get(req.params.id, req.user.id);
+router.put('/:id', authenticate, txValidators, async (req, res) => {
+  const {
+    rows: [transaction]
+  } = await db.query(
+    `SELECT t.* FROM transactions t
+     JOIN budgets b ON b.id = t.budget_id
+     WHERE t.id = $1 AND b.owner_id = $2`,
+    [req.params.id, req.user.id]
+  );
   if (!transaction) {
     return res.status(404).json({ message: 'Transaction not found' });
   }
-  const payload = {
-    budget_id: req.body.budgetId,
-    event_id: req.body.eventId || null,
-    type: req.body.type,
-    status: req.body.status,
-    amount: numberFrom(req.body.amount),
-    category: req.body.category,
-    notes: req.body.notes || null,
-    timestamp: req.body.timestamp,
-    recurrence: req.body.recurrenceRule || null,
-    updated: now(),
-    id: req.params.id
-  };
-  db.prepare(`
-    UPDATE transactions SET
-      budget_id = @budget_id,
-      event_id = @event_id,
-      type = @type,
-      status = @status,
-      amount_cents = @amount,
-      category = @category,
-      notes = @notes,
-      timestamp = @timestamp,
-      recurrence_rule = @recurrence,
-      updated_at = @updated
-    WHERE id = @id
-  `).run(payload);
+  const {
+    rows: [targetBudget]
+  } = await db.query('SELECT id FROM budgets WHERE id = $1 AND owner_id = $2', [req.body.budgetId, req.user.id]);
+  if (!targetBudget) {
+    return res.status(404).json({ message: 'Budget not found' });
+  }
+  await db.query(
+    `UPDATE transactions SET
+        budget_id = $1,
+        event_id = $2,
+        type = $3,
+        status = $4,
+        amount_cents = $5,
+        category = $6,
+        notes = $7,
+        timestamp = $8,
+        recurrence_rule = $9,
+        updated_at = $10
+      WHERE id = $11`,
+    [
+      req.body.budgetId,
+      req.body.eventId || null,
+      req.body.type,
+      req.body.status,
+      numberFrom(req.body.amount),
+      req.body.category,
+      req.body.notes || null,
+      req.body.timestamp,
+      req.body.recurrenceRule || null,
+      now(),
+      req.params.id
+    ]
+  );
   res.json({ message: 'Transaction updated' });
 });
 
-router.delete('/:id', authenticate, (req, res) => {
-  const tx = db.prepare(`
-    SELECT t.*, a.id AS attachment_id, a.file_path FROM transactions t
-    LEFT JOIN attachments a ON a.transaction_id = t.id
-    JOIN budgets b ON b.id = t.budget_id
-    WHERE t.id = ? AND b.owner_id = ?
-  `).all(req.params.id, req.user.id);
-  if (!tx.length) {
+router.delete('/:id', authenticate, async (req, res) => {
+  const { rows } = await db.query(
+    `SELECT t.id, a.file_path
+     FROM transactions t
+     LEFT JOIN attachments a ON a.transaction_id = t.id
+     JOIN budgets b ON b.id = t.budget_id
+     WHERE t.id = $1 AND b.owner_id = $2`,
+    [req.params.id, req.user.id]
+  );
+  if (!rows.length) {
     return res.status(404).json({ message: 'Transaction not found' });
   }
-  tx.forEach((row) => {
+  rows.forEach((row) => {
     if (row.file_path && fs.existsSync(row.file_path)) {
       fs.unlinkSync(row.file_path);
     }
   });
-  db.prepare('DELETE FROM attachments WHERE transaction_id = ?').run(req.params.id);
-  db.prepare('DELETE FROM transactions WHERE id = ?').run(req.params.id);
+  await db.query('DELETE FROM attachments WHERE transaction_id = $1', [req.params.id]);
+  await db.query('DELETE FROM transactions WHERE id = $1', [req.params.id]);
   res.json({ message: 'Transaction removed' });
 });
 
@@ -160,39 +182,69 @@ const storage = multer.diskStorage({
   }
 });
 
-const upload = multer({ storage });
-
-router.post('/:id/receipt', authenticate, upload.single('receipt'), (req, res) => {
-  const transaction = db.prepare(`
-    SELECT t.* FROM transactions t JOIN budgets b ON b.id = t.budget_id
-    WHERE t.id = ? AND b.owner_id = ?
-  `).get(req.params.id, req.user.id);
-  if (!transaction) {
-    if (req.file) {
-      fs.unlinkSync(req.file.path);
+const upload = multer({
+  storage,
+  limits: { fileSize: config.uploadMaxBytes },
+  fileFilter: (_, file, cb) => {
+    if (!config.uploadAllowedMimeTypes.includes(file.mimetype)) {
+      return cb(new Error('Unsupported file type'));
     }
-    return res.status(404).json({ message: 'Transaction not found' });
+    cb(null, true);
   }
-  if (!req.file) {
-    return res.status(400).json({ message: 'Missing receipt file' });
-  }
-  const stmt = db.prepare(`
-    INSERT INTO attachments (transaction_id, file_name, mime_type, file_path, uploaded_at)
-    VALUES (?, ?, ?, ?, ?)
-  `);
-  const info = stmt.run(transaction.id, req.file.originalname, req.file.mimetype, req.file.path, now());
-  db.prepare('UPDATE transactions SET receipt_path = ? WHERE id = ?').run(req.file.path, transaction.id);
-  res.status(201).json({ attachmentId: info.lastInsertRowid, path: req.file.path });
 });
 
-router.get('/:id/receipt', authenticate, (req, res) => {
-  const attachment = db.prepare(`
-    SELECT a.* FROM attachments a
-    JOIN transactions t ON t.id = a.transaction_id
-    JOIN budgets b ON b.id = t.budget_id
-    WHERE t.id = ? AND b.owner_id = ?
-    ORDER BY a.uploaded_at DESC LIMIT 1
-  `).get(req.params.id, req.user.id);
+router.post('/:id/receipt', authenticate, (req, res, next) => {
+  upload.single('receipt')(req, res, async (err) => {
+    if (err) {
+      const message = err.code === 'LIMIT_FILE_SIZE' ? 'Receipt exceeds size limit' : err.message;
+      return res.status(400).json({ message });
+    }
+    try {
+      const {
+        rows: [transaction]
+      } = await db.query(
+        `SELECT t.* FROM transactions t JOIN budgets b ON b.id = t.budget_id
+         WHERE t.id = $1 AND b.owner_id = $2`,
+        [req.params.id, req.user.id]
+      );
+      if (!transaction) {
+        if (req.file) {
+          fs.unlinkSync(req.file.path);
+        }
+        return res.status(404).json({ message: 'Transaction not found' });
+      }
+      if (!req.file) {
+        return res.status(400).json({ message: 'Missing receipt file' });
+      }
+      const uploadedAt = now();
+      const {
+        rows: [attachment]
+      } = await db.query(
+        `INSERT INTO attachments (transaction_id, file_name, mime_type, file_path, uploaded_at)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id`,
+        [transaction.id, req.file.originalname, req.file.mimetype, req.file.path, uploadedAt]
+      );
+      await db.query('UPDATE transactions SET receipt_path = $1 WHERE id = $2', [req.file.path, transaction.id]);
+      res.status(201).json({ attachmentId: attachment.id, path: req.file.path });
+    } catch (error) {
+      next(error);
+    }
+  });
+});
+
+router.get('/:id/receipt', authenticate, async (req, res) => {
+  const {
+    rows: [attachment]
+  } = await db.query(
+    `SELECT a.* FROM attachments a
+     JOIN transactions t ON t.id = a.transaction_id
+     JOIN budgets b ON b.id = t.budget_id
+     WHERE t.id = $1 AND b.owner_id = $2
+     ORDER BY a.uploaded_at DESC
+     LIMIT 1`,
+    [req.params.id, req.user.id]
+  );
   if (!attachment) {
     return res.status(404).json({ message: 'Receipt not found' });
   }

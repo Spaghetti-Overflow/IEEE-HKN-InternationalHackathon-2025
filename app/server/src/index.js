@@ -3,10 +3,11 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import rateLimit from 'express-rate-limit';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { config } from './config.js';
-import './db.js';
+import { initializeDatabase } from './db.js';
 
 import authRoutes from './routes/auth.js';
 import budgetRoutes from './routes/budgets.js';
@@ -18,13 +19,27 @@ import analyticsRoutes from './routes/analytics.js';
 
 const app = express();
 
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 500,
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+const corsOptions = {
+  origin(origin, callback) {
+    if (!origin) return callback(null, true);
+    if (config.clientOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true
+};
+
 app.use(helmet());
-app.use(
-  cors({
-    origin: config.clientOrigin,
-    credentials: true
-  })
-);
+app.use(globalLimiter);
+app.use(cors(corsOptions));
 app.use(cookieParser());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
@@ -54,6 +69,13 @@ app.use((err, req, res, next) => {
   res.status(500).json({ message: 'Unexpected error' });
 });
 
-app.listen(config.port, () => {
-  console.log(`Server listening on port ${config.port}`);
-});
+initializeDatabase()
+  .then(() => {
+    app.listen(config.port, () => {
+      console.log(`Server listening on port ${config.port}`);
+    });
+  })
+  .catch((error) => {
+    console.error('Failed to initialize database', error);
+    process.exit(1);
+  });

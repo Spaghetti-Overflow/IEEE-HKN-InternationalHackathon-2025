@@ -3,10 +3,28 @@ import PDFDocument from 'pdfkit';
 import { db } from '../db.js';
 import { authenticate } from '../middleware/auth.js';
 
+const palette = {
+  primary: '#1E3A8A',
+  accent: '#1D4ED8',
+  muted: '#4B5563',
+  border: '#E0E7FF',
+  lightBg: '#EEF2FF',
+  cardBg: '#FFFFFF'
+};
+
+const usdFormatter = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  minimumFractionDigits: 2
+});
+
 const router = Router();
 
-function ensureBudget(budgetId, userId) {
-  return db.prepare('SELECT * FROM budgets WHERE id = ? AND owner_id = ?').get(budgetId, userId);
+async function ensureBudget(budgetId, userId) {
+  const {
+    rows: [budget]
+  } = await db.query('SELECT * FROM budgets WHERE id = $1 AND owner_id = $2', [budgetId, userId]);
+  return budget || null;
 }
 
 function formatTimestamp(seconds) {
@@ -15,8 +33,33 @@ function formatTimestamp(seconds) {
   return date.toISOString();
 }
 
+function formatReadableDate(seconds) {
+  if (!seconds) return '—';
+  const date = new Date(Number(seconds) * 1000);
+  return date.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
+
+function formatDateRange(start, end) {
+  const startLabel = formatReadableDate(start);
+  const endLabel = formatReadableDate(end);
+  if (start && end) {
+    return `${startLabel} → ${endLabel}`;
+  }
+  return start ? `${startLabel} → TBD` : end ? `TBD → ${endLabel}` : 'Dates TBD';
+}
+
 function dollarsFromCents(cents) {
   return Number((Number(cents || 0) / 100).toFixed(2));
+}
+
+function formatCurrency(cents) {
+  return usdFormatter.format(dollarsFromCents(cents || 0));
 }
 
 function slugifyName(name = '') {
@@ -57,37 +100,36 @@ function totalsFromTransactions(transactions) {
   );
 }
 
-function buildBudgetReport(budgetId, userId) {
-  const budget = ensureBudget(budgetId, userId);
+async function buildBudgetReport(budgetId, userId) {
+  const budget = await ensureBudget(budgetId, userId);
   if (!budget) {
     return null;
   }
-  const transactions = db
-    .prepare(
-      `SELECT t.*, e.name AS event_name
-       FROM transactions t
-       LEFT JOIN events e ON e.id = t.event_id
-       WHERE t.budget_id = ?
-       ORDER BY t.timestamp ASC`
-    )
-    .all(budgetId);
-  const deadlines = db
-    .prepare('SELECT * FROM deadlines WHERE budget_id = ? ORDER BY due_timestamp ASC')
-    .all(budgetId);
-  const events = db
-    .prepare(
-      `SELECT e.*, 
+  const { rows: transactions } = await db.query(
+    `SELECT t.*, e.name AS event_name
+     FROM transactions t
+     LEFT JOIN events e ON e.id = t.event_id
+     WHERE t.budget_id = $1
+     ORDER BY t.timestamp ASC`,
+    [budgetId]
+  );
+  const { rows: deadlines } = await db.query(
+    'SELECT * FROM deadlines WHERE budget_id = $1 ORDER BY due_timestamp ASC',
+    [budgetId]
+  );
+  const { rows: events } = await db.query(
+    `SELECT e.*, 
         COALESCE(SUM(CASE WHEN t.type = 'income' AND t.status = 'actual' THEN t.amount_cents ELSE 0 END), 0) AS actual_income,
         COALESCE(SUM(CASE WHEN t.type = 'expense' AND t.status = 'actual' THEN t.amount_cents ELSE 0 END), 0) AS actual_expense,
         COALESCE(SUM(CASE WHEN t.type = 'income' THEN t.amount_cents ELSE 0 END), 0) AS projected_income,
         COALESCE(SUM(CASE WHEN t.type = 'expense' THEN t.amount_cents ELSE 0 END), 0) AS projected_expense
-      FROM events e
-      LEFT JOIN transactions t ON t.event_id = e.id
-      WHERE e.budget_id = ?
-      GROUP BY e.id
-      ORDER BY e.start_ts ASC`
-    )
-    .all(budgetId);
+     FROM events e
+     LEFT JOIN transactions t ON t.event_id = e.id
+     WHERE e.budget_id = $1
+     GROUP BY e.id
+     ORDER BY e.start_ts ASC`,
+    [budgetId]
+  );
 
   const totals = totalsFromTransactions(transactions);
   const startYear = new Date(budget.academic_year_start * 1000).getUTCFullYear();
@@ -190,83 +232,181 @@ function writePdfReport(report, res) {
   const doc = new PDFDocument({ margin: 40, size: 'A4' });
   doc.pipe(res);
 
-  doc.fontSize(20).text(`Budget Report: ${budget.name}`);
-  doc.moveDown(0.5);
-  doc.fontSize(12).text(`Academic Year: ${academicLabel}`);
-  doc.text(`Allocated Amount: $${dollarsFromCents(summary.allocatedAmount).toFixed(2)}`);
-  doc.text(`Actual Balance: $${dollarsFromCents(summary.actualBalance).toFixed(2)}`);
-  doc.text(`Projected Balance: $${dollarsFromCents(summary.projectedBalance).toFixed(2)}`);
-  doc.moveDown();
+  drawReportHeader(doc, `Budget Report`, `${budget.name} • Academic Year ${academicLabel}`);
 
-  doc.fontSize(16).text('Transactions', { underline: true });
-  doc.moveDown(0.5);
+  drawSummaryGrid(doc, [
+    { label: 'Allocated amount', value: formatCurrency(summary.allocatedAmount) },
+    { label: 'Actual balance', value: formatCurrency(summary.actualBalance) },
+    { label: 'Projected balance', value: formatCurrency(summary.projectedBalance) },
+    { label: 'Actual income', value: formatCurrency(summary.actualIncome) },
+    { label: 'Actual expenses', value: formatCurrency(summary.actualExpense) },
+    {
+      label: 'Projected net',
+      value: formatCurrency(summary.projectedIncome - summary.projectedExpense)
+    }
+  ]);
+
+  drawSectionHeading(doc, 'Transactions');
   if (!transactions.length) {
-    doc.fontSize(11).text('No transactions recorded.');
+    doc.font('Helvetica').fontSize(11).fillColor(palette.muted).text('No transactions recorded.');
+    doc.fillColor('black');
   } else {
     transactions.forEach((tx) => {
-      doc.fontSize(12).text(`${formatTimestamp(tx.timestamp)} — ${tx.type.toUpperCase()} $${dollarsFromCents(tx.amount_cents).toFixed(2)} (${tx.status})`);
-      const details = [tx.category];
-      if (tx.event_name) {
-        details.push(`Event: ${tx.event_name}`);
-      }
-      doc.fontSize(10).fillColor('gray').text(details.filter(Boolean).join(' · '));
-      if (tx.notes) {
-        doc.text(`Notes: ${tx.notes}`);
-      }
-      doc.fillColor('black');
-      doc.moveDown(0.4);
+      const typeLabel = tx.type === 'income' ? 'Income' : 'Expense';
+      const title = `${typeLabel} · ${formatCurrency(tx.amount_cents)} (${tx.status.toUpperCase()})`;
+      const subtitle = `${formatReadableDate(tx.timestamp)}${tx.category ? ` • ${tx.category}` : ''}`;
+      const details = [tx.event_name && `Event: ${tx.event_name}`, tx.notes && `Notes: ${tx.notes}`].filter(Boolean);
+      drawInfoCard(doc, { title, subtitle, lines: details });
     });
   }
 
-  doc.moveDown();
-  doc.fontSize(16).text('Deadlines', { underline: true });
-  doc.moveDown(0.5);
+  drawSectionHeading(doc, 'Deadlines');
   if (!deadlines.length) {
-    doc.fontSize(11).text('No deadlines recorded.');
+    doc.font('Helvetica').fontSize(11).fillColor(palette.muted).text('No deadlines recorded.');
+    doc.fillColor('black');
   } else {
     deadlines.forEach((deadline) => {
-      doc.fontSize(12).text(`${deadline.title} — ${deadline.status || 'open'}`);
-      const dueLine = formatTimestamp(deadline.due_timestamp);
-      doc.fontSize(10).fillColor('gray').text(`Due: ${dueLine}${deadline.category ? ` · ${deadline.category}` : ''}`);
-      if (deadline.link) {
-        doc.text(deadline.link, { underline: true });
-      }
-      doc.fillColor('black');
-      doc.moveDown(0.4);
+      const title = `${deadline.title} (${deadline.status || 'Open'})`;
+      const subtitle = `${formatReadableDate(deadline.due_timestamp)}${deadline.category ? ` • ${deadline.category}` : ''}`;
+      const lines = [deadline.link && `Link: ${deadline.link}`].filter(Boolean);
+      drawInfoCard(doc, { title, subtitle, lines });
     });
   }
 
-  doc.moveDown();
-  doc.fontSize(16).text('Events', { underline: true });
-  doc.moveDown(0.5);
+  drawSectionHeading(doc, 'Events');
   if (!events.length) {
-    doc.fontSize(11).text('No events recorded.');
+    doc.font('Helvetica').fontSize(11).fillColor(palette.muted).text('No events recorded.');
+    doc.fillColor('black');
   } else {
     events.forEach((event) => {
       const actualNetCents = (event.actual_income || 0) - (event.actual_expense || 0);
       const projectedNetCents = (event.projected_income || 0) - (event.projected_expense || 0);
-      const actual = dollarsFromCents(actualNetCents).toFixed(2);
-      const projected = dollarsFromCents(projectedNetCents).toFixed(2);
-      doc.fontSize(12).text(event.name);
-      const range = [formatTimestamp(event.start_ts), formatTimestamp(event.end_ts)].filter(Boolean).join(' → ') || 'Dates TBD';
-      doc.fontSize(10)
-        .fillColor('gray')
-        .text(
-          `Allocated: $${dollarsFromCents(event.allocated_amount || 0).toFixed(2)} · Net (actual/projected): $${actual} / $${projected} · ${range}`
-        );
-      if (event.notes) {
-        doc.text(`Notes: ${event.notes}`);
-      }
-      doc.fillColor('black');
-      doc.moveDown(0.4);
+      const title = `${event.name} · Allocated ${formatCurrency(event.allocated_amount || 0)}`;
+      const subtitle = `Net (actual / projected): ${formatCurrency(actualNetCents)} / ${formatCurrency(projectedNetCents)}`;
+      const lines = [formatDateRange(event.start_ts, event.end_ts), event.notes && `Notes: ${event.notes}`].filter(Boolean);
+      drawInfoCard(doc, { title, subtitle, lines });
     });
   }
 
   doc.end();
 }
 
-router.get('/budget/:id/csv', authenticate, (req, res) => {
-  const report = buildBudgetReport(req.params.id, req.user.id);
+function getContentWidth(doc) {
+  return doc.page.width - doc.page.margins.left - doc.page.margins.right;
+}
+
+function drawReportHeader(doc, title, subtitle) {
+  const contentWidth = getContentWidth(doc);
+  const headerHeight = 72;
+  const x = doc.page.margins.left;
+  const y = doc.y;
+
+  doc.save();
+  doc.roundedRect(x, y, contentWidth, headerHeight, 12).fill(palette.primary);
+  doc.fillColor('white');
+  doc.font('Helvetica-Bold').fontSize(22).text(title, x + 20, y + 16, {
+    width: contentWidth - 40
+  });
+  doc.font('Helvetica').fontSize(12).text(subtitle, {
+    width: contentWidth - 40
+  });
+  doc.restore();
+
+  doc.y = y + headerHeight + 20;
+  doc.moveDown(0.5);
+}
+
+function drawSummaryGrid(doc, entries) {
+  const columns = 2;
+  const gap = 14;
+  const contentWidth = getContentWidth(doc);
+  const cellWidth = (contentWidth - gap * (columns - 1)) / columns;
+  const cellHeight = 70;
+  const startY = doc.y;
+
+  entries.forEach((entry, index) => {
+    const col = index % columns;
+    const row = Math.floor(index / columns);
+    const x = doc.page.margins.left + col * (cellWidth + gap);
+    const y = startY + row * (cellHeight + gap);
+
+    doc.save();
+    doc.roundedRect(x, y, cellWidth, cellHeight, 10).fill(palette.lightBg);
+    doc.restore();
+
+    doc.font('Helvetica').fontSize(9).fillColor(palette.muted).text(entry.label.toUpperCase(), x + 12, y + 12, {
+      width: cellWidth - 24
+    });
+    doc.font('Helvetica-Bold').fontSize(16).fillColor(palette.primary).text(entry.value, x + 12, y + 32, {
+      width: cellWidth - 24
+    });
+    doc.fillColor('black');
+  });
+
+  const rows = Math.ceil(entries.length / columns);
+  doc.y = startY + rows * (cellHeight + gap);
+  doc.moveDown();
+}
+
+function drawSectionHeading(doc, title) {
+  doc.moveDown();
+  doc.font('Helvetica-Bold').fontSize(14).fillColor(palette.primary).text(title.toUpperCase());
+  doc.fillColor('black');
+  const x = doc.page.margins.left;
+  const width = getContentWidth(doc);
+  const y = doc.y + 2;
+  doc.save();
+  doc.rect(x, y, width, 1).fill(palette.border);
+  doc.restore();
+  doc.moveDown(0.5);
+}
+
+function drawInfoCard(doc, { title, subtitle, lines }) {
+  const contentWidth = getContentWidth(doc);
+  const cardWidth = contentWidth;
+  const textWidth = cardWidth - 24;
+  const startX = doc.page.margins.left;
+  const startY = doc.y;
+  const bodyLines = (lines || []).filter(Boolean);
+
+  doc.font('Helvetica-Bold').fontSize(12);
+  const titleHeight = doc.heightOfString(title, { width: textWidth });
+  doc.font('Helvetica').fontSize(10);
+  const subtitleHeight = subtitle ? doc.heightOfString(subtitle, { width: textWidth }) : 0;
+  const bodyHeight = bodyLines.reduce((total, line) => {
+    return total + doc.heightOfString(line, { width: textWidth });
+  }, 0);
+  const cardHeight = titleHeight + subtitleHeight + bodyHeight + 28;
+
+  doc.save();
+  doc.roundedRect(startX, startY, cardWidth, cardHeight, 10).fillAndStroke(palette.cardBg, palette.border);
+  doc.restore();
+
+  let cursorY = startY + 12;
+  doc.font('Helvetica-Bold').fontSize(12).fillColor(palette.accent).text(title, startX + 12, cursorY, {
+    width: textWidth
+  });
+  cursorY += titleHeight + 4;
+
+  if (subtitle) {
+    doc.font('Helvetica').fontSize(10).fillColor(palette.muted).text(subtitle, startX + 12, cursorY, {
+      width: textWidth
+    });
+    cursorY += subtitleHeight + 4;
+  }
+
+  doc.font('Helvetica').fontSize(10).fillColor('black');
+  bodyLines.forEach((line) => {
+    doc.text(line, startX + 12, cursorY, { width: textWidth });
+    cursorY += doc.heightOfString(line, { width: textWidth }) + 2;
+  });
+
+  doc.y = startY + cardHeight + 8;
+  doc.moveDown(0.1);
+}
+
+router.get('/budget/:id/csv', authenticate, async (req, res) => {
+  const report = await buildBudgetReport(req.params.id, req.user.id);
   if (!report) {
     return res.status(404).json({ message: 'Budget not found' });
   }
@@ -277,8 +417,8 @@ router.get('/budget/:id/csv', authenticate, (req, res) => {
   res.send(content);
 });
 
-router.get('/budget/:id/pdf', authenticate, (req, res) => {
-  const report = buildBudgetReport(req.params.id, req.user.id);
+router.get('/budget/:id/pdf', authenticate, async (req, res) => {
+  const report = await buildBudgetReport(req.params.id, req.user.id);
   if (!report) {
     return res.status(404).json({ message: 'Budget not found' });
   }

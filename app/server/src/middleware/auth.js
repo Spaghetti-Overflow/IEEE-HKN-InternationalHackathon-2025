@@ -1,8 +1,9 @@
 import jwt from 'jsonwebtoken';
 import { config } from '../config.js';
 import { db } from '../db.js';
+import { isValidTimezone } from '../utils/time.js';
 
-export function authenticate(req, res, next) {
+export async function authenticate(req, res, next) {
   const header = req.headers.authorization;
   let token = null;
   if (header?.startsWith('Bearer ')) {
@@ -18,8 +19,8 @@ export function authenticate(req, res, next) {
     const decoded = jwt.verify(token, config.jwtSecret);
     req.user = decoded;
     const timezone = req.headers['x-user-timezone'];
-    if (timezone) {
-      db.prepare('UPDATE users SET timezone = ? WHERE id = ?').run(timezone, decoded.id);
+    if (timezone && isValidTimezone(timezone)) {
+      await db.query('UPDATE users SET timezone = $1 WHERE id = $2', [timezone, decoded.id]);
       req.user.timezone = timezone;
     }
     next();

@@ -13,3 +13,15 @@ export function getAcademicYearBounds(timestamp = now(), startMonth = 8) {
     label: `${startYear}/${startYear + 1}`
   };
 }
+
+export function isValidTimezone(zone) {
+  if (!zone || typeof zone !== 'string' || zone.length > 64) {
+    return false;
+  }
+  try {
+    Intl.DateTimeFormat('en-US', { timeZone: zone });
+    return true;
+  } catch {
+    return false;
+  }
+}

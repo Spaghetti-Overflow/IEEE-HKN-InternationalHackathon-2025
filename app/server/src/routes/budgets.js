@@ -33,47 +33,37 @@ function decorateBudget(budget, summary, currentTs) {
   };
 }
 
-router.get('/', authenticate, (req, res) => {
-  const budgets = db.prepare('SELECT * FROM budgets WHERE owner_id = ? ORDER BY created_at DESC').all(req.user.id);
-  const summaryStmt = db.prepare(`
-    SELECT
-      budget_id,
-      SUM(CASE WHEN type = 'income' AND status = 'actual' THEN amount_cents ELSE 0 END) AS actual_income,
-      SUM(CASE WHEN type = 'expense' AND status = 'actual' THEN amount_cents ELSE 0 END) AS actual_expense,
-      SUM(CASE WHEN type = 'income' THEN amount_cents ELSE 0 END) AS projected_income,
-      SUM(CASE WHEN type = 'expense' THEN amount_cents ELSE 0 END) AS projected_expense
-    FROM transactions
-    WHERE budget_id IN (SELECT id FROM budgets WHERE owner_id = ?)
-    GROUP BY budget_id
-  `);
-  const summaries = summaryStmt.all(req.user.id).reduce((acc, row) => {
+async function mapSummaries(budgetIds) {
+  if (!budgetIds.length) return {};
+  const { rows } = await db.query(
+    `SELECT
+        budget_id,
+        SUM(CASE WHEN type = 'income' AND status = 'actual' THEN amount_cents ELSE 0 END) AS actual_income,
+        SUM(CASE WHEN type = 'expense' AND status = 'actual' THEN amount_cents ELSE 0 END) AS actual_expense,
+        SUM(CASE WHEN type = 'income' THEN amount_cents ELSE 0 END) AS projected_income,
+        SUM(CASE WHEN type = 'expense' THEN amount_cents ELSE 0 END) AS projected_expense
+      FROM transactions
+      WHERE budget_id = ANY($1::int[])
+      GROUP BY budget_id`,
+    [budgetIds]
+  );
+  return rows.reduce((acc, row) => {
     acc[row.budget_id] = row;
     return acc;
   }, {});
+}
 
+router.get('/', authenticate, async (req, res) => {
+  const { rows: budgets } = await db.query('SELECT * FROM budgets WHERE owner_id = $1 ORDER BY created_at DESC', [req.user.id]);
+  const summaries = await mapSummaries(budgets.map((b) => b.id));
   const currentTs = now();
   const enriched = budgets.map((budget) => decorateBudget(budget, summaries[budget.id], currentTs));
-
   res.json(enriched);
 });
 
-router.get('/archived', authenticate, (req, res) => {
-  const budgets = db.prepare('SELECT * FROM budgets WHERE owner_id = ? ORDER BY academic_year_end DESC').all(req.user.id);
-  const summaryStmt = db.prepare(`
-    SELECT
-      budget_id,
-      SUM(CASE WHEN type = 'income' AND status = 'actual' THEN amount_cents ELSE 0 END) AS actual_income,
-      SUM(CASE WHEN type = 'expense' AND status = 'actual' THEN amount_cents ELSE 0 END) AS actual_expense,
-      SUM(CASE WHEN type = 'income' THEN amount_cents ELSE 0 END) AS projected_income,
-      SUM(CASE WHEN type = 'expense' THEN amount_cents ELSE 0 END) AS projected_expense
-    FROM transactions
-    WHERE budget_id IN (SELECT id FROM budgets WHERE owner_id = ?)
-    GROUP BY budget_id
-  `);
-  const summaries = summaryStmt.all(req.user.id).reduce((acc, row) => {
-    acc[row.budget_id] = row;
-    return acc;
-  }, {});
+router.get('/archived', authenticate, async (req, res) => {
+  const { rows: budgets } = await db.query('SELECT * FROM budgets WHERE owner_id = $1 ORDER BY academic_year_end DESC', [req.user.id]);
+  const summaries = await mapSummaries(budgets.map((b) => b.id));
   const currentTs = now();
   const archived = budgets
     .map((budget) => decorateBudget(budget, summaries[budget.id], currentTs))
@@ -81,7 +71,7 @@ router.get('/archived', authenticate, (req, res) => {
   res.json(archived);
 });
 
-router.post('/', authenticate, budgetValidators, (req, res) => {
+router.post('/', authenticate, budgetValidators, async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
@@ -90,45 +80,41 @@ router.post('/', authenticate, budgetValidators, (req, res) => {
   const { name, allocatedAmount, academicYearStart } = req.body;
   const timestamp = academicYearStart ? Number(academicYearStart) : now();
   const academic = getAcademicYearBounds(timestamp);
-  const stmt = db.prepare(`
-    INSERT INTO budgets (name, academic_year_start, academic_year_end, allocated_amount, owner_id, created_at)
-    VALUES (@name, @start, @end, @allocated, @owner, @created)
-  `);
+  const allocatedCents = Math.round(Number(allocatedAmount || 0) * 100);
+  const createdAt = now();
 
-  const info = stmt.run({
-    name,
-    start: academic.start,
-    end: academic.end,
-    allocated: Math.round(Number(allocatedAmount || 0) * 100),
-    owner: req.user.id,
-    created: now()
-  });
+  const {
+    rows: [inserted]
+  } = await db.query(
+    `INSERT INTO budgets (name, academic_year_start, academic_year_end, allocated_amount, owner_id, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING id`,
+    [name, academic.start, academic.end, allocatedCents, req.user.id, createdAt]
+  );
 
-  res.status(201).json({ id: info.lastInsertRowid });
+  res.status(201).json({ id: inserted.id });
 });
 
-router.put('/:id', authenticate, budgetValidators, (req, res) => {
+router.put('/:id', authenticate, budgetValidators, async (req, res) => {
   const { id } = req.params;
-  const existing = db.prepare('SELECT * FROM budgets WHERE id = ? AND owner_id = ?').get(id, req.user.id);
+  const {
+    rows: [existing]
+  } = await db.query('SELECT * FROM budgets WHERE id = $1 AND owner_id = $2', [id, req.user.id]);
   if (!existing) {
     return res.status(404).json({ message: 'Budget not found' });
   }
   const { name, allocatedAmount } = req.body;
-  db.prepare('UPDATE budgets SET name = ?, allocated_amount = ? WHERE id = ?').run(
-    name || existing.name,
-    allocatedAmount !== undefined ? Math.round(Number(allocatedAmount) * 100) : existing.allocated_amount,
-    id
-  );
+  const nextAllocated =
+    allocatedAmount !== undefined ? Math.round(Number(allocatedAmount) * 100) : existing.allocated_amount;
+  await db.query('UPDATE budgets SET name = $1, allocated_amount = $2 WHERE id = $3', [name || existing.name, nextAllocated, id]);
   res.json({ message: 'Budget updated' });
 });
 
-router.delete('/:id', authenticate, (req, res) => {
-  const { id } = req.params;
-  db.prepare('DELETE FROM transactions WHERE budget_id = ?').run(id);
-  db.prepare('DELETE FROM deadlines WHERE budget_id = ?').run(id);
-  db.prepare('DELETE FROM events WHERE budget_id = ?').run(id);
-  const result = db.prepare('DELETE FROM budgets WHERE id = ? AND owner_id = ?').run(id, req.user.id);
-  if (!result.changes) {
+router.delete('/:id', authenticate, async (req, res) => {
+  const {
+    rows
+  } = await db.query('DELETE FROM budgets WHERE id = $1 AND owner_id = $2 RETURNING id', [req.params.id, req.user.id]);
+  if (!rows.length) {
     return res.status(404).json({ message: 'Budget not found' });
   }
   res.json({ message: 'Budget removed' });

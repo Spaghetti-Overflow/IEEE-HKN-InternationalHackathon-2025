@@ -55,38 +55,36 @@ export default function DashboardHeader({
   return (
     <header className="dashboard-header">
       <nav className="app-nav card card--glass">
-        <div className="brand">
+        <div className="brand nav-brand">
           <span className="brand__dot" />
           <div>
             <p className="muted text-uppercase mb-0">IEEE-HKN</p>
             <h2>Budget HQ</h2>
           </div>
         </div>
-        <div className="nav-flex">
-          <div className="nav-links">
-            {NAV_ITEMS.map((item) => (
-              <button key={item.target} type="button" onClick={() => scrollToSection(item.target)}>
-                {item.label}
-              </button>
-            ))}
-          </div>
-          <div className="nav-actions">
-            {exportsBaseUrl ? (
-              <div className="btn-group flex-wrap">
-                <a className="btn btn-primary-soft" href={`${exportsBaseUrl}/csv`} target="_blank" rel="noreferrer">
-                  <FiDownloadCloud /> CSV
-                </a>
-                <a className="btn btn-outline-primary" href={`${exportsBaseUrl}/pdf`} target="_blank" rel="noreferrer">
-                  <FiFileText /> PDF
-                </a>
-              </div>
-            ) : (
-              <span className="muted small">Create a budget to enable exports</span>
-            )}
-            <button className="btn btn-outline-dark" onClick={logout}>
-              <FiLogOut /> Logout ({user?.displayName || user?.username})
+        <div className="nav-links">
+          {NAV_ITEMS.map((item) => (
+            <button key={item.target} type="button" onClick={() => scrollToSection(item.target)}>
+              {item.label}
             </button>
-          </div>
+          ))}
+        </div>
+        <div className="nav-actions">
+          {exportsBaseUrl ? (
+            <div className="btn-group flex-wrap">
+              <a className="btn btn-primary-soft" href={`${exportsBaseUrl}/csv`} target="_blank" rel="noreferrer">
+                <FiDownloadCloud /> CSV
+              </a>
+              <a className="btn btn-outline-primary" href={`${exportsBaseUrl}/pdf`} target="_blank" rel="noreferrer">
+                <FiFileText /> PDF
+              </a>
+            </div>
+          ) : (
+            <span className="muted small">Create a budget to enable exports</span>
+          )}
+          <button className="btn btn-outline-dark" onClick={logout}>
+            <FiLogOut /> Logout ({user?.displayName || user?.username})
+          </button>
         </div>
       </nav>
 

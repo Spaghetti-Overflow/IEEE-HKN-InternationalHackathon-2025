@@ -1,0 +1,57 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: budgetdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d budgetdb']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  server:
+    build:
+      context: ./server
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: budgetdb
+      PGSSL: 'false'
+      JWT_SECRET: supersecretkey
+      CLIENT_ORIGIN: http://localhost:5173
+      AUTH_COOKIE_SECURE: 'false'
+      UPLOAD_DIR: /uploads
+    ports:
+      - '4000:4000'
+    volumes:
+      - uploads_data:/uploads
+
+  client:
+    build:
+      context: ./client
+      args:
+        VITE_API_URL: ${CLIENT_API_URL:-http://localhost:4000}
+    restart: unless-stopped
+    depends_on:
+      - server
+    ports:
+      - '5173:80'
+
+volumes:
+  postgres_data:
+  uploads_data:
