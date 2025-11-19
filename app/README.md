@@ -157,7 +157,14 @@ Must-set production values:
 | Command | Creates |
 | --- | --- |
 | `npm run db:seed:base` or `make base_seed` | Only the configurable admin (set via `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `ADMIN_DISPLAY_NAME`, `ADMIN_TIMEZONE`). Perfect for a clean slate. |
-| `npm run db:seed:demo` or `make demo_seed` / `make seed` | Base admin **plus** the `demo / hackathon` account, starter budget, sample transactions, and a deadline. |
+| `npm run db:seed:demo` or `make demo_seed` / `make seed` | Base admin **plus** the `demo / hackathon` account, four budgets (current, outreach, recruitment, legacy), linked events, a dozen+ transactions, and a wall of deadlines so the UI looks demo-ready. |
+
+The demo fixtures now preload:
+
+- 4 budgets spanning current, future, and archived academic years
+- 6 marquee events tied to those budgets
+- 14 transactions (mix of actual, planned, and recurring entries, many linked to events)
+- 6 deadlines covering every status, complete with helpful descriptions/links
 
 After `make clean && make demo_seed`, log in with `demo / hackathon` to explore instantly. Rotate credentials once you create real accounts.
 
