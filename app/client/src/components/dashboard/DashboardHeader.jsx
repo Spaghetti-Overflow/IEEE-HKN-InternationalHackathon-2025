@@ -1,6 +1,8 @@
-import { FiDownloadCloud, FiFileText, FiLogOut, FiShield } from 'react-icons/fi';
+import { useState } from 'react';
+import { FiDownloadCloud, FiFileText, FiLogOut, FiMenu, FiShield, FiX } from 'react-icons/fi';
 import { Link } from 'react-router-dom';
 import { format, formatDistanceToNow } from 'date-fns';
+import useMediaQuery from '../../hooks/useMediaQuery.js';
 
 const NAV_ITEMS = [
   { label: 'Overview', target: 'overview' },
@@ -31,6 +33,8 @@ export default function DashboardHeader({
   projectionWindowDays,
   topCategory
 }) {
+  const [navOpen, setNavOpen] = useState(false);
+  const isCompactHero = useMediaQuery('(max-width: 640px)');
   const scrollToSection = (target) => {
     if (typeof window === 'undefined') return;
     const anchor = target === 'overview' ? document.querySelector('.dashboard') : document.getElementById(target);
@@ -38,6 +42,11 @@ export default function DashboardHeader({
       anchor.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   };
+  const handleNavClick = (target) => {
+    scrollToSection(target);
+    setNavOpen(false);
+  };
+  const closeNav = () => setNavOpen(false);
   const deadlineCounts = deadlineBreakdown || {};
   const totalDeadlines = Object.values(deadlineCounts).reduce((acc, count) => acc + count, 0);
   const openDeadlines = deadlineCounts.open || 0;
@@ -55,60 +64,74 @@ export default function DashboardHeader({
 
   return (
     <header className="dashboard-header">
-      <nav className="app-nav card card--glass">
-        <div className="brand nav-brand">
-          <span className="brand__dot" />
-          <div>
-            <p className="muted text-uppercase mb-0">IEEE-HKN</p>
-            <h2>Budget HQ</h2>
-          </div>
-        </div>
-        <div className="nav-links">
-          {NAV_ITEMS.map((item) => (
-            <button key={item.target} type="button" onClick={() => scrollToSection(item.target)}>
-              {item.label}
-            </button>
-          ))}
-        </div>
-        <div className="nav-actions">
-          {exportsBaseUrl ? (
-            <div className="btn-group flex-wrap">
-              <a className="btn btn-primary-soft" href={`${exportsBaseUrl}/csv`} target="_blank" rel="noreferrer">
-                <FiDownloadCloud /> CSV
-              </a>
-              <a className="btn btn-outline-primary" href={`${exportsBaseUrl}/pdf`} target="_blank" rel="noreferrer">
-                <FiFileText /> PDF
-              </a>
+      <nav className={`app-nav card card--glass ${navOpen ? 'app-nav--open' : ''}`}>
+        <div className="nav-header-row">
+          <div className="brand nav-brand">
+            <span className="brand__dot" />
+            <div>
+              <p className="muted text-uppercase mb-0">IEEE-HKN</p>
+              <h2>Budget HQ</h2>
             </div>
-          ) : (
-            <span className="muted small">Create a budget to enable exports</span>
-          )}
-          <Link className="btn btn-outline-primary" to="/security">
-            <FiShield /> Security
-          </Link>
-          <button className="btn btn-outline-dark" onClick={logout}>
-            <FiLogOut /> Logout ({user?.displayName || user?.username})
+          </div>
+          <button
+            type="button"
+            className="nav-toggle mobile-only"
+            aria-expanded={navOpen}
+            aria-controls="dashboard-nav-sections"
+            onClick={() => setNavOpen((prev) => !prev)}
+          >
+            {navOpen ? <FiX /> : <FiMenu />}
+            <span>{navOpen ? 'Close' : 'Menu'}</span>
           </button>
+        </div>
+        <div id="dashboard-nav-sections" className="nav-collapsible" data-open={navOpen}>
+          <div className="nav-links">
+            {NAV_ITEMS.map((item) => (
+              <button key={item.target} type="button" onClick={() => handleNavClick(item.target)}>
+                {item.label}
+              </button>
+            ))}
+          </div>
+          <div className="nav-actions">
+            {exportsBaseUrl ? (
+              <div className="btn-group flex-wrap">
+                <a className="btn btn-primary-soft" href={`${exportsBaseUrl}/csv`} target="_blank" rel="noreferrer" onClick={closeNav}>
+                  <FiDownloadCloud /> CSV
+                </a>
+                <a className="btn btn-outline-primary" href={`${exportsBaseUrl}/pdf`} target="_blank" rel="noreferrer" onClick={closeNav}>
+                  <FiFileText /> PDF
+                </a>
+              </div>
+            ) : (
+              <span className="muted small">Create a budget to enable exports</span>
+            )}
+            <Link className="btn btn-outline-primary" to="/security" onClick={closeNav}>
+              <FiShield /> Security
+            </Link>
+            <button className="btn btn-outline-dark" onClick={() => { closeNav(); logout(); }}>
+              <FiLogOut /> Logout ({user?.displayName || user?.username})
+            </button>
+          </div>
         </div>
       </nav>
 
-      <section id="overview" className="hero card hero-card">
+      <section id="overview" className={`hero card hero-card ${isCompactHero ? 'hero--compact' : ''}`}>
         <div className="hero__text">
           <p className="muted text-uppercase">Smart Budget Scheduler</p>
           <h1>{activeBudget ? activeBudget.name : 'Plan your first chapter budget'}</h1>
-          <p className="hero__subtitle">
+          <p className={`hero__subtitle ${isCompactHero ? 'hero__subtitle--compact' : ''}`}>
             {activeBudget
               ? `Academic year ${activeBudget.academicLabel}`
               : 'Create a budget to unlock tracking, deadlines, and analytics.'}
           </p>
-          <div className="hero__meta">
+          <div className={`hero__meta ${isCompactHero ? 'hero__meta--scroll' : ''}`}>
             <span className="pill pill--light">Actual {formatCurrency(transactionTotals.actual)}</span>
             <span className="pill pill--light">Projected {formatCurrency(transactionTotals.projected)}</span>
             <span className="pill pill--outline">{deadlineLabel}</span>
           </div>
         </div>
-        <div className="hero-panels">
-          <article className="hero-panel">
+        <div className={`hero-panels ${isCompactHero ? 'hero-panels--carousel' : ''}`}>
+          <article className={`hero-panel ${isCompactHero ? 'hero-panel--compact' : ''}`}>
             <p className="hero-panel__eyebrow">Next milestone</p>
             {nextDeadlineDate ? (
               <>
@@ -136,7 +159,7 @@ export default function DashboardHeader({
               </>
             )}
           </article>
-          <article className="hero-panel">
+          <article className={`hero-panel ${isCompactHero ? 'hero-panel--compact' : ''}`}>
             <p className="hero-panel__eyebrow">Upcoming cash flow</p>
             <p className={`hero-panel__value ${upcomingIsPositive ? 'hero-panel__value--positive' : 'hero-panel__value--negative'}`}>
               {upcomingIsPositive ? '+' : '-'}
@@ -156,7 +179,7 @@ export default function DashboardHeader({
               </div>
             </div>
           </article>
-          <article className="hero-panel">
+          <article className={`hero-panel ${isCompactHero ? 'hero-panel--compact' : ''}`}>
             <p className="hero-panel__eyebrow">Top category</p>
             {hasTopCategory ? (
               <>

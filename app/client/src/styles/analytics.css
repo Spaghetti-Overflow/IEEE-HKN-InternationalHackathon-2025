@@ -70,6 +70,10 @@
   align-items: start;
 }
 
+.dashboard-grid--single {
+  grid-template-columns: 1fr;
+}
+
 .dashboard-main {
   display: flex;
   flex-direction: column;
@@ -83,6 +87,14 @@
   position: sticky;
   top: 1rem;
   align-self: flex-start;
+}
+
+.mobile-highlight-stack .card {
+  min-width: clamp(240px, 80vw, 320px);
+}
+
+.mobile-highlight-stack .metric-panel__grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .stack-panels {

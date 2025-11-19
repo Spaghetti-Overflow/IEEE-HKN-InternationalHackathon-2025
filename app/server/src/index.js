@@ -26,13 +26,23 @@ const globalLimiter = rateLimit({
   legacyHeaders: false
 });
 
+const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const originPatternRegexes = config.clientOriginPatterns.map((pattern) => {
+  const escaped = pattern.split('*').map(escapeRegex).join('.*');
+  return new RegExp(`^${escaped}$`, 'i');
+});
+
 const corsOptions = {
   origin(origin, callback) {
     if (!origin) return callback(null, true);
     if (config.clientOrigins.includes(origin)) {
       return callback(null, true);
     }
-    return callback(new Error('Not allowed by CORS'));
+    if (originPatternRegexes.some((regex) => regex.test(origin))) {
+      return callback(null, true);
+    }
+    return callback(new Error(`Not allowed by CORS: ${origin}`));
   },
   credentials: true
 };

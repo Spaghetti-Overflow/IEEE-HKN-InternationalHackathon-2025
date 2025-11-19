@@ -11,6 +11,7 @@ import UpcomingPanel from '../components/dashboard/UpcomingPanel.jsx';
 import InsightsPanel from '../components/dashboard/InsightsPanel.jsx';
 import ChartsSection from '../components/dashboard/ChartsSection.jsx';
 import ArchivedBudgets from '../components/dashboard/ArchivedBudgets.jsx';
+import useMediaQuery from '../hooks/useMediaQuery.js';
 
 const datetimeLocal = (timestamp = Date.now()) => new Date(timestamp).toISOString().slice(0, 16);
 const toUnix = (value) => Math.floor(new Date(value).getTime() / 1000);
@@ -75,6 +76,7 @@ export default function DashboardPage() {
     deleteEvent,
     exportsBaseUrl
   } = useDashboardData();
+  const isMobile = useMediaQuery('(max-width: 768px)');
 
   const activeBudget = useMemo(() => budgets.find((b) => b.id === selectedBudgetId), [budgets, selectedBudgetId]);
   const archivedBudgets = useMemo(() => budgets.filter((budget) => budget.isArchived), [budgets]);
@@ -252,6 +254,43 @@ export default function DashboardPage() {
     return [...list].sort((a, b) => b.expenses + b.incomes - (a.expenses + a.incomes))[0];
   }, [analytics]);
 
+  const budgetSection = (
+    <>
+      <BudgetSwitcher
+        budgets={budgets}
+        selectedBudgetId={selectedBudgetId}
+        setSelectedBudgetId={setSelectedBudgetId}
+        budgetForm={budgetForm}
+        setBudgetForm={setBudgetForm}
+        handleBudgetCreate={handleBudgetCreate}
+      />
+      <ArchivedBudgets archivedBudgets={archivedBudgets} setSelectedBudgetId={setSelectedBudgetId} />
+    </>
+  );
+
+  const insightSection = activeBudget ? (
+    <>
+      <BudgetPulsePanel budgetHealth={budgetHealth} transactionTotals={transactionTotals} eventsCount={events.length} />
+      <UpcomingPanel
+        projectionWindowDays={projectionWindowDays}
+        upcomingSummary={upcomingSummary}
+        upcomingList={analytics?.upcoming || []}
+      />
+      <InsightsPanel
+        deadlineStatusOrder={DEADLINE_STATUS_ORDER}
+        deadlineStatusLabels={DEADLINE_STATUS_LABELS}
+        deadlineBreakdown={deadlineBreakdown}
+        topCategory={topCategory}
+        nextDeadline={nextDeadline}
+      />
+    </>
+  ) : (
+    <article className="card text-center">
+      <h3>Set up a budget</h3>
+      <p className="muted">Create your first academic year budget to unlock analytics, exports, and insights.</p>
+    </article>
+  );
+
   return (
     <main className="dashboard container-xxl">
       <DashboardHeader
@@ -269,8 +308,9 @@ export default function DashboardPage() {
 
       {error ? <p className="error-text">{error}</p> : null}
 
-      <section className="dashboard-grid">
+      <section className={`dashboard-grid ${isMobile ? 'dashboard-grid--single' : ''}`}>
         <div className="dashboard-main">
+          {isMobile ? <div className="mobile-highlight-stack">{insightSection}</div> : null}
           <div className="anchor-section" id="transactions">
             <TransactionsPanel
               transactionForm={transactionForm}
@@ -316,44 +356,21 @@ export default function DashboardPage() {
           <div id="analytics" className="anchor-section">
             <ChartsSection analytics={analytics} />
           </div>
+
+          {isMobile ? (
+            <div className="anchor-section" id="budgets">
+              {budgetSection}
+            </div>
+          ) : null}
         </div>
-
-        <aside className="dashboard-sidebar">
-          <div className="anchor-section" id="budgets">
-            <BudgetSwitcher
-              budgets={budgets}
-              selectedBudgetId={selectedBudgetId}
-              setSelectedBudgetId={setSelectedBudgetId}
-              budgetForm={budgetForm}
-              setBudgetForm={setBudgetForm}
-              handleBudgetCreate={handleBudgetCreate}
-            />
-            <ArchivedBudgets archivedBudgets={archivedBudgets} setSelectedBudgetId={setSelectedBudgetId} />
-          </div>
-
-          {activeBudget ? (
-            <>
-              <BudgetPulsePanel budgetHealth={budgetHealth} transactionTotals={transactionTotals} eventsCount={events.length} />
-              <UpcomingPanel
-                projectionWindowDays={projectionWindowDays}
-                upcomingSummary={upcomingSummary}
-                upcomingList={analytics.upcoming}
-              />
-              <InsightsPanel
-                deadlineStatusOrder={DEADLINE_STATUS_ORDER}
-                deadlineStatusLabels={DEADLINE_STATUS_LABELS}
-                deadlineBreakdown={deadlineBreakdown}
-                topCategory={topCategory}
-                nextDeadline={nextDeadline}
-              />
-            </>
-          ) : (
-            <article className="card text-center">
-              <h3>Set up a budget</h3>
-              <p className="muted">Create your first academic year budget to unlock analytics, exports, and insights.</p>
-            </article>
-          )}
-        </aside>
+        {!isMobile ? (
+          <aside className="dashboard-sidebar">
+            <div className="anchor-section" id="budgets">
+              {budgetSection}
+            </div>
+            {insightSection}
+          </aside>
+        ) : null}
       </section>
 
       {loading ? <p className="muted">Refreshing data…</p> : null}

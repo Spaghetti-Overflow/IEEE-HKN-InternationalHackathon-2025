@@ -22,6 +22,10 @@ const clientOrigins = (process.env.CLIENT_ORIGINS || process.env.CLIENT_ORIGIN |
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
+const clientOriginPatterns = (process.env.CLIENT_ORIGIN_PATTERNS || '')
+  .split(',')
+  .map((pattern) => pattern.trim())
+  .filter(Boolean);
 
 export const config = {
   port: process.env.PORT ? Number(process.env.PORT) : 4000,
@@ -38,6 +42,7 @@ export const config = {
   uploadAllowedMimeTypes,
   clientOrigin: clientOrigins[0],
   clientOrigins,
+  clientOriginPatterns,
   authCookieName: process.env.AUTH_COOKIE_NAME || 'hkn_budget_token',
   authTokenTtlSeconds: process.env.AUTH_TOKEN_TTL ? Number(process.env.AUTH_TOKEN_TTL) : 60 * 60 * 12,
   authCookieSecure:
