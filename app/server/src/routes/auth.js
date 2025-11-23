@@ -285,4 +285,9 @@ router.post('/logout', authenticate, (req, res) => {
   res.json({ message: 'Logged out' });
 });
 
+router.get('/export-token', authenticate, (req, res) => {
+  const token = jwt.sign({ id: req.user.id, username: req.user.username }, config.jwtSecret, { expiresIn: '5m' });
+  res.json({ token });
+});
+
 export default router;

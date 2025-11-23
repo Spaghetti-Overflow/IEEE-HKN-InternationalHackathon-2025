@@ -3,6 +3,7 @@ import { FiDownloadCloud, FiFileText, FiLogOut, FiMenu, FiShield, FiX } from 're
 import { Link } from 'react-router-dom';
 import { format, formatDistanceToNow } from 'date-fns';
 import useMediaQuery from '../../hooks/useMediaQuery.js';
+import { getExportToken } from '../../api/client.js';
 
 const NAV_ITEMS = [
   { label: 'Overview', target: 'overview' },
@@ -47,6 +48,17 @@ export default function DashboardHeader({
     setNavOpen(false);
   };
   const closeNav = () => setNavOpen(false);
+  
+  const handleExport = async (format) => {
+    try {
+      const token = await getExportToken();
+      const url = `${exportsBaseUrl}/${format}?token=${token}`;
+      window.open(url, '_blank');
+    } catch (error) {
+      console.error('Export failed:', error);
+    }
+  };
+  
   const deadlineCounts = deadlineBreakdown || {};
   const totalDeadlines = Object.values(deadlineCounts).reduce((acc, count) => acc + count, 0);
   const openDeadlines = deadlineCounts.open || 0;
@@ -95,12 +107,12 @@ export default function DashboardHeader({
           <div className="nav-actions">
             {exportsBaseUrl ? (
               <div className="btn-group flex-wrap">
-                <a className="btn btn-primary-soft" href={`${exportsBaseUrl}/csv`} target="_blank" rel="noreferrer" onClick={closeNav}>
+                <button className="btn btn-primary-soft" onClick={() => { handleExport('csv'); closeNav(); }}>
                   <FiDownloadCloud /> CSV
-                </a>
-                <a className="btn btn-outline-primary" href={`${exportsBaseUrl}/pdf`} target="_blank" rel="noreferrer" onClick={closeNav}>
+                </button>
+                <button className="btn btn-outline-primary" onClick={() => { handleExport('pdf'); closeNav(); }}>
                   <FiFileText /> PDF
-                </a>
+                </button>
               </div>
             ) : (
               <span className="muted small">Create a budget to enable exports</span>

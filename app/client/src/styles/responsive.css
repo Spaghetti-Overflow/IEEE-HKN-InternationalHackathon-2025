@@ -145,10 +145,12 @@
     max-height: none !important;
     opacity: 1 !important;
     pointer-events: auto !important;
+    flex: 1;
   }
 
   .nav-actions {
     justify-content: flex-end;
+    margin-left: auto;
   }
 }
 

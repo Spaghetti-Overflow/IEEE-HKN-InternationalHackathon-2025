@@ -10,6 +10,8 @@ export async function authenticate(req, res, next) {
     token = header.replace('Bearer ', '');
   } else if (req.cookies?.[config.authCookieName]) {
     token = req.cookies[config.authCookieName];
+  } else if (req.query?.token) {
+    token = req.query.token;
   }
 
   if (!token) {

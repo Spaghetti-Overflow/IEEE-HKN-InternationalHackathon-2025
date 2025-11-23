@@ -51,3 +51,8 @@ api.interceptors.request.use((config) => {
 });
 
 export default api;
+
+export async function getExportToken() {
+  const response = await api.get('/auth/export-token');
+  return response.data.token;
+}
