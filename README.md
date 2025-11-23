@@ -64,6 +64,9 @@ All listed team members are members of the **Mu Nu Chapter** at **Politecnico di
 - **Events & allocations:** Chapter events linked to specific budgets and transactions.
 - **Exports & reporting:** One-click CSV/PDF budget packets suitable for advisors and university finance.
 - **Auth + MFA:** Login/register, secure JWT cookie sessions, and optional TOTP-based 2FA from a dedicated security page.
+- **OAuth integration:** Google OAuth login support with automatic user creation for seamless onboarding.
+- **Role-based access control:** Three-tier permission system (admin, treasurer, member) with protected routes and admin panel.
+- **Admin dashboard:** User management, category configuration, app settings customization, and system statistics.
 - **Analytics dashboard:** Category breakdown charts, monthly trends, and deadline statistics at a glance.
 - **Developer ergonomics:** Dockerized stack, seed scripts, and Make targets for quick spin-up and demo data.
 
@@ -103,6 +106,23 @@ For the full and up-to-date reference, see the route files under `app/server/src
 - `POST /api/auth/totp/setup` – Start TOTP enrollment (QR + secret).
 - `POST /api/auth/totp/verify` – Confirm TOTP enrollment.
 - `POST /api/auth/totp/disable` – Disable MFA with a fresh TOTP code.
+- `GET /api/auth/oauth/google/status` – Check Google OAuth configuration status.
+- `GET /api/auth/oauth/google` – Initiate Google OAuth login flow.
+- `GET /api/auth/oauth/google/callback` – Handle OAuth callback and create/login user.
+- `GET /api/auth/export-token` – Generate a short-lived export token.
+
+**Admin (requires admin role)**
+
+- `GET /api/admin/users` – List all users with their roles and OAuth status.
+- `PATCH /api/admin/users/:id` – Update user role, display name, or timezone.
+- `DELETE /api/admin/users/:id` – Delete a user (prevents deleting last admin or self).
+- `GET /api/admin/categories` – List all transaction categories.
+- `POST /api/admin/categories` – Create a new category (income, expense, or both).
+- `PATCH /api/admin/categories/:id` – Update category name or type.
+- `DELETE /api/admin/categories/:id` – Delete a category.
+- `GET /api/admin/settings` – Get application settings (theme, logo, colors, etc.).
+- `POST /api/admin/settings` – Update application settings.
+- `GET /api/admin/stats` – Get system statistics (user count, budgets, transactions, role distribution).
 
 **Budgets, transactions, events, deadlines**
 
@@ -124,54 +144,87 @@ For the full and up-to-date reference, see the route files under `app/server/src
 The backend uses PostgreSQL. A simplified logical schema:
 
 **`users`**
-- `id` – `uuid` – **PK**
+- `id` – `serial` – **PK**
 - `username` – `text` – unique
 - `password_hash` – `text`
 - `display_name` – `text`
-- `timezone` – `text`
+- `timezone` – `text` – default 'UTC'
+- `role` – `text` – default 'member' (admin/treasurer/member)
+- `oauth_provider` – `text` – nullable (e.g., 'google')
+- `oauth_id` – `text` – nullable (external OAuth user ID)
 - `totp_secret` – `text` – nullable (for MFA)
-- `created_at` / `updated_at` – `timestamptz`
+- `totp_enabled` – `boolean` – default false
+- `totp_verified_at` – `bigint` – nullable
+- `created_at` – `bigint`
 
 **`budgets`**
-- `id` – `uuid` – **PK**
+- `id` – `serial` – **PK**
 - `name` – `text`
-- `academic_year` – `text`
-- `is_archived` – `boolean`
-- `owner_id` – `uuid` – **FK → users(id)**
-- `created_at` / `updated_at` – `timestamptz`
+- `academic_year_start` – `bigint`
+- `academic_year_end` – `bigint`
+- `allocated_amount` – `integer` – default 0
+- `owner_id` – `integer` – **FK → users(id)**
+- `created_at` – `bigint`
 
 **`events`**
-- `id` – `uuid` – **PK**
-- `budget_id` – `uuid` – **FK → budgets(id)`**
-- `title` – `text`
-- `description` – `text`
-- `event_date` – `timestamptz`
+- `id` – `serial` – **PK**
+- `budget_id` – `integer` – **FK → budgets(id)**
+- `name` – `text`
+- `allocated_amount` – `integer` – default 0
+- `start_ts` – `bigint` – nullable
+- `end_ts` – `bigint` – nullable
+- `notes` – `text` – nullable
 
 **`transactions`**
-- `id` – `uuid` – **PK**
-- `budget_id` – `uuid` – **FK → budgets(id)`**
-- `event_id` – `uuid` – nullable **FK → events(id)`**
+- `id` – `serial` – **PK**
+- `budget_id` – `integer` – **FK → budgets(id)**
+- `event_id` – `integer` – nullable **FK → events(id)**
+- `user_id` – `integer` – nullable **FK → users(id)**
 - `type` – `text` – income/expense
-- `amount` – `numeric`
+- `status` – `text` – actual/planned/recurring (default 'actual')
+- `amount_cents` – `integer`
 - `category` – `text`
-- `is_planned` / `is_recurring` – `boolean`
-- `notes` – `text`
-- `attachment_id` – `uuid` – nullable **FK → attachments(id)`**
-- `created_at` / `updated_at` – `timestamptz`
+- `notes` – `text` – nullable
+- `timestamp` – `bigint`
+- `recurrence_rule` – `text` – nullable
+- `receipt_path` – `text` – nullable
+- `created_at` – `bigint`
+- `updated_at` – `bigint`
 
 **`deadlines`**
-- `id` – `uuid` – **PK**
-- `budget_id` – `uuid` – **FK → budgets(id)`**
+- `id` – `serial` – **PK**
+- `budget_id` – `integer` – **FK → budgets(id)**
 - `title` – `text`
-- `description` – `text`
-- `due_at` – `timestamptz`
-- `status` – `text` – e.g., pending, completed, missed
-- `link` – `text` – optional reference URL
+- `description` – `text` – nullable
+- `due_timestamp` – `bigint`
+- `category` – `text` – nullable
+- `status` – `text` – open/submitted/won/lost (default 'open')
+- `link` – `text` – nullable
+- `created_at` – `bigint`
 
 **`attachments`**
-- `id` – `uuid` – **PK**
-- `transaction_id` – `uuid` – **FK → transactions(id)`**
-- `filename` – `text`
+- `id` – `serial` – **PK**
+- `transaction_id` – `integer` – **FK → transactions(id)**
+- `file_name` – `text`
 - `mime_type` – `text`
-- `path` – `text`
-- `uploaded_at` – `timestamptz`
+- `file_path` – `text`
+- `uploaded_at` – `bigint`
+
+**`budget_members`**
+- `id` – `serial` – **PK**
+- `budget_id` – `integer` – **FK → budgets(id)**
+- `user_id` – `integer` – **FK → users(id)**
+- `role` – `text` – editor/viewer (default 'viewer')
+- `added_at` – `bigint`
+- **Unique constraint:** (budget_id, user_id)
+
+**`categories`**
+- `id` – `serial` – **PK**
+- `name` – `text` – unique
+- `type` – `text` – income/expense/both (default 'both')
+- `created_at` – `bigint`
+
+**`app_settings`**
+- `key` – `text` – **PK**
+- `value` – `text`
+- `updated_at` – `bigint`
