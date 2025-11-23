@@ -60,14 +60,118 @@ app/
 
 ## Feature Highlights
 
+### Core Features (100% Complete)
+
 - **Budget intelligence** — Actual vs projected balances by academic year, with archived-history browsing.
 - **Transactions & receipts** — CRUD with categories, notes, attachments, and planned/recurring states.
 - **Deadline radar** — Funding reminders with status tracking and localized timestamps.
 - **Events & allocations** — Budget events with linked spend so chapters know where every grant dollar lands.
-- **Exports** — One-click CSV + PDF budget packets, ready for advisors or university finance.
+- **Exports** — One-click CSV + PDF budget packets with secure token-based authentication for cross-origin downloads.
 - **Auth + MFA** — Secure login, TOTP enrollment from the dedicated `/security` page, JWT cookies with sane defaults.
 - **Analytics** — Category breakdown bars, monthly trend lines, and deadline counts at a glance.
+- **Mobile responsive** — Optimized interface for tablets and smartphones with compact hero panels and touch-friendly controls.
 - **Dev ergonomics** — `make up`, instant seeding profiles, and Compose volumes to preserve data between runs.
+
+### Advanced Features (Optional Requirements - 100% Complete)
+
+#### Multi-User & Role-Based Access Control
+
+- **Three permission tiers**: Admin (full control), Treasurer (budget management), Member (view-only)
+- **Shared budgets**: Budget ownership with multi-user access via `budget_members` table (editor/viewer roles)
+- **Admin safeguards**: System prevents deletion/demotion of the last admin account
+- **First-user auto-admin**: Initial account automatically receives admin privileges
+- **Role middleware**: `requireAdmin` and `requireTreasurerOrAdmin` functions protect sensitive endpoints
+
+#### Admin Control Panel (`/admin`)
+
+A comprehensive administrative dashboard accessible at `/admin` for users with admin role:
+
+**User Management Tab**
+- View all registered users with role badges and registration dates
+- Modify user roles (admin/treasurer/member) with inline dropdowns
+- Delete user accounts with confirmation (blocks deletion of last admin and self-deletion)
+- Display user authentication methods (password vs OAuth)
+
+**Categories Tab**
+- Create custom transaction categories with name and type (income/expense/both)
+- Edit existing categories inline
+- Delete categories that are no longer needed
+- Categories apply globally across all budgets
+
+**Settings Tab**
+- **Organization Branding**: Configure organization name, theme preferences
+- **Visual Customization**: Set primary brand colors and logo URL
+- **Persistent Storage**: All settings saved to `app_settings` table with timestamps
+- Settings propagate across the application for consistent branding
+
+**Statistics Tab**
+- Real-time system metrics dashboard
+- **User Analytics**: Total user count with role distribution breakdown
+- **Budget Metrics**: Active budget count and total transaction volume
+- **Activity Indicators**: Visual cards showing system health and usage patterns
+
+#### OAuth Social Login (Fully Implemented)
+
+**Google OAuth Integration** with complete error handling and user experience:
+
+**Backend Implementation**
+- `/api/auth/oauth/google` - Initiates OAuth flow with configuration validation
+- `/api/auth/oauth/google/callback` - Handles authorization callback and user creation/linking
+- `/api/auth/oauth/google/status` - Pre-flight endpoint to check configuration status
+- **Automatic user provisioning**: Creates new users or links to existing accounts by email
+- **Error handling**: Graceful redirects to login with error parameters when OAuth fails
+
+**Frontend Integration**
+- **Enhanced login page** with "Continue with Google" button featuring Google branding
+- **Pre-flight validation**: Checks OAuth configuration before redirecting users
+- **Error notifications**: Beautiful error boxes distinguish between configuration and authentication failures
+  - Orange "Configuration Required" notices for missing credentials
+  - Red error alerts for authentication failures
+- **Smart error detection**: URL parameters capture OAuth errors (`oauth_not_configured`, `oauth_failed`)
+
+**Setup Guide**
+1. Create OAuth 2.0 credentials at [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
+2. Configure OAuth consent screen with required scopes: `openid`, `email`, `profile`
+3. Set authorized redirect URI: `http://localhost:4000/api/auth/oauth/google/callback` (or production URL)
+4. Add credentials to `server/.env`:
+   ```env
+   GOOGLE_CLIENT_ID=your_client_id_here.apps.googleusercontent.com
+   GOOGLE_CLIENT_SECRET=your_client_secret_here
+   PUBLIC_API_URL=http://localhost:4000  # or production URL
+   ```
+5. Restart server - the "Continue with Google" button will now function
+6. **User experience**: Users see clear error messages if OAuth is not configured
+
+**Extensibility**
+- Database schema supports multiple OAuth providers (`oauth_provider`, `oauth_id` fields)
+- Add GitHub, Microsoft, or other providers by following the same pattern
+- See `docs/OAUTH_SETUP.md` for detailed configuration guide
+
+#### Enhanced UI/UX Features
+
+**Modern Authentication Pages**
+- **Gradient backgrounds** with animated floating elements
+- **Icon-enhanced forms** with SVG icons for each input field
+- **Password visibility toggle** with eye icons instead of text
+- **Animated buttons** with ripple effects on hover
+- **Loading states** with spinner animations during submission
+- **Welcome badges** with contextual icons (login vs registration)
+- **Smooth transitions** and micro-interactions throughout
+
+**Error Handling & User Feedback**
+- **Styled error boxes** with appropriate colors:
+  - Red alerts for authentication errors
+  - Orange warnings for configuration issues
+- **Icon-based messaging** with contextual SVG icons
+- **Clear call-to-action** text guiding users to solutions
+- **Animated entrance** for error messages (slideIn animation)
+
+**Responsive Design Enhancements**
+- Touch-friendly button sizes and spacing
+- Mobile-optimized form layouts
+- Adaptive card shadows and hover states
+- Fluid typography scaling across devices
+
 
 
 ## Project Layout

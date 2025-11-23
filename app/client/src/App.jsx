@@ -3,6 +3,7 @@ import LoginPage from './pages/LoginPage.jsx';
 import RegisterPage from './pages/RegisterPage.jsx';
 import DashboardPage from './pages/DashboardPage.jsx';
 import SecurityPage from './pages/SecurityPage.jsx';
+import AdminPage from './pages/AdminPage.jsx';
 import { useAuth } from './context/AuthContext.jsx';
 
 function PrivateRoute({ children }) {
@@ -39,6 +40,14 @@ export default function App() {
           element={
             <PrivateRoute>
               <SecurityPage />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/admin"
+          element={
+            <PrivateRoute>
+              <AdminPage />
             </PrivateRoute>
           }
         />

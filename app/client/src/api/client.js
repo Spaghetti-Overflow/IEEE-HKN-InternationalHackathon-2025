@@ -56,3 +56,47 @@ export async function getExportToken() {
   const response = await api.get('/auth/export-token');
   return response.data.token;
 }
+
+// Admin API functions
+export const adminApi = {
+  async getUsers() {
+    const response = await api.get('/admin/users');
+    return response.data;
+  },
+  async updateUser(userId, updates) {
+    const response = await api.patch(`/admin/users/${userId}`, updates);
+    return response.data;
+  },
+  async deleteUser(userId) {
+    const response = await api.delete(`/admin/users/${userId}`);
+    return response.data;
+  },
+  async getCategories() {
+    const response = await api.get('/admin/categories');
+    return response.data;
+  },
+  async createCategory(category) {
+    const response = await api.post('/admin/categories', category);
+    return response.data;
+  },
+  async updateCategory(categoryId, updates) {
+    const response = await api.patch(`/admin/categories/${categoryId}`, updates);
+    return response.data;
+  },
+  async deleteCategory(categoryId) {
+    const response = await api.delete(`/admin/categories/${categoryId}`);
+    return response.data;
+  },
+  async getSettings() {
+    const response = await api.get('/admin/settings');
+    return response.data;
+  },
+  async updateSettings(settings) {
+    const response = await api.post('/admin/settings', settings);
+    return response.data;
+  },
+  async getStats() {
+    const response = await api.get('/admin/stats');
+    return response.data;
+  }
+};

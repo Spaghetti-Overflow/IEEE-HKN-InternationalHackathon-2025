@@ -21,12 +21,19 @@ function formatUser(row) {
     username: row.username,
     displayName: row.display_name,
     timezone: row.timezone,
-    totpEnabled: Boolean(row.totp_enabled)
+    role: row.role || 'member',
+    totpEnabled: Boolean(row.totp_enabled),
+    oauthProvider: row.oauth_provider
   };
 }
 
 function issueSession(res, user) {
-  const payload = { id: user.id, username: user.username, timezone: user.timezone };
+  const payload = { 
+    id: user.id, 
+    username: user.username, 
+    timezone: user.timezone,
+    role: user.role || 'member'
+  };
   const token = jwt.sign(payload, config.jwtSecret, { expiresIn: config.authTokenTtlSeconds });
   res.cookie(config.authCookieName, token, {
     httpOnly: true,
@@ -289,5 +296,136 @@ router.get('/export-token', authenticate, (req, res) => {
   const token = jwt.sign({ id: req.user.id, username: req.user.username }, config.jwtSecret, { expiresIn: '5m' });
   res.json({ token });
 });
+
+// Check OAuth configuration status
+router.get('/oauth/google/status', (req, res) => {
+  const isConfigured = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+  res.json({ 
+    configured: isConfigured,
+    message: isConfigured 
+      ? 'Google OAuth is configured' 
+      : 'Google OAuth is not configured. Please add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to the environment variables.'
+  });
+});
+
+// OAuth initiation endpoint
+router.get('/oauth/google', (req, res) => {
+  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+    return res.status(503).json({ 
+      message: 'Google OAuth is not configured. Please add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to the environment variables.',
+      code: 'OAUTH_NOT_CONFIGURED'
+    });
+  }
+
+  const redirectUri = `${process.env.PUBLIC_API_URL || 'http://localhost:4000'}/api/auth/oauth/google/callback`;
+  const scope = 'openid email profile';
+  const state = req.query.redirect_after || '/dashboard';
+
+  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+    `client_id=${encodeURIComponent(process.env.GOOGLE_CLIENT_ID)}` +
+    `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+    `&response_type=code` +
+    `&scope=${encodeURIComponent(scope)}` +
+    `&state=${encodeURIComponent(state)}`;
+
+  res.redirect(authUrl);
+});
+
+// OAuth callback handler (Google example)
+router.get('/oauth/google/callback', async (req, res) => {
+  try {
+    const { code, state } = req.query;
+    if (!code) {
+      return res.redirect(`${config.clientOrigin || 'http://localhost:5173'}/login?error=oauth_failed`);
+    }
+
+    // Exchange code for tokens (implement Google OAuth flow)
+    // This is a placeholder - requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET
+    const googleUser = await exchangeGoogleCode(code);
+    
+    const { rows: [existing] } = await db.query(
+      'SELECT * FROM users WHERE oauth_provider = $1 AND oauth_id = $2',
+      ['google', googleUser.id]
+    );
+
+    let user;
+    if (existing) {
+      user = existing;
+    } else {
+      const { rows: [newUser] } = await db.query(`
+        INSERT INTO users (username, password_hash, display_name, timezone, oauth_provider, oauth_id, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING *
+      `, [
+        googleUser.email,
+        await bcrypt.hash(Math.random().toString(36), 10), // Random password for OAuth users
+        googleUser.name,
+        'UTC',
+        'google',
+        googleUser.id,
+        now()
+      ]);
+      user = newUser;
+    }
+
+    issueSession(res, user);
+    const redirectPath = state || '/dashboard';
+    res.redirect(`${config.clientOrigin || 'http://localhost:5173'}${redirectPath}`);
+  } catch (error) {
+    console.error('OAuth error:', error);
+    const clientOrigin = config.clientOrigin || 'http://localhost:5173';
+    if (error.message.includes('Google OAuth not configured')) {
+      return res.redirect(`${clientOrigin}/login?error=oauth_not_configured`);
+    }
+    res.redirect(`${clientOrigin}/login?error=oauth_failed`);
+  }
+});
+
+// Placeholder for Google token exchange
+async function exchangeGoogleCode(code) {
+  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+    throw new Error('Google OAuth not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.');
+  }
+
+  const redirectUri = `${process.env.PUBLIC_API_URL || 'http://localhost:4000'}/api/auth/oauth/google/callback`;
+
+  // Exchange authorization code for access token
+  const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      code,
+      client_id: process.env.GOOGLE_CLIENT_ID,
+      client_secret: process.env.GOOGLE_CLIENT_SECRET,
+      redirect_uri: redirectUri,
+      grant_type: 'authorization_code'
+    })
+  });
+
+  if (!tokenResponse.ok) {
+    const error = await tokenResponse.text();
+    throw new Error(`Failed to exchange authorization code: ${error}`);
+  }
+
+  const tokens = await tokenResponse.json();
+
+  // Fetch user profile with access token
+  const profileResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+    headers: { Authorization: `Bearer ${tokens.access_token}` }
+  });
+
+  if (!profileResponse.ok) {
+    throw new Error('Failed to fetch user profile from Google');
+  }
+
+  const profile = await profileResponse.json();
+  
+  return {
+    id: profile.id,
+    email: profile.email,
+    name: profile.name || profile.email.split('@')[0],
+    picture: profile.picture
+  };
+}
 
 export default router;

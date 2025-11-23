@@ -117,6 +117,11 @@ export default function DashboardHeader({
             ) : (
               <span className="muted small">Create a budget to enable exports</span>
             )}
+            {user?.role === 'admin' && (
+              <Link className="btn btn-outline-primary" to="/admin" onClick={closeNav}>
+                Admin Panel
+              </Link>
+            )}
             <Link className="btn btn-outline-primary" to="/security" onClick={closeNav}>
               <FiShield /> Security
             </Link>

@@ -23,10 +23,10 @@ export async function seedDemo() {
   const {
     rows: [user]
   } = await db.query(
-    `INSERT INTO users (username, password_hash, display_name, timezone, created_at)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO users (username, password_hash, display_name, timezone, role, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING id`,
-    ['demo', passwordHash, 'Demo User', 'America/New_York', now()]
+    ['demo', passwordHash, 'Demo User', 'America/New_York', 'admin', now()]
   );
 
   const dayInSeconds = 86400;

@@ -48,6 +48,8 @@ services:
       UPLOAD_DIR: ${UPLOAD_DIR:-/uploads}
       UPLOAD_MAX_BYTES: ${UPLOAD_MAX_BYTES:-5242880}
       UPLOAD_ALLOWED_MIME_TYPES: ${UPLOAD_ALLOWED_MIME_TYPES:-image/jpeg,image/png,application/pdf}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
     ports:
       - '4000:4000'
     volumes:

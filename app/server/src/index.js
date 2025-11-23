@@ -16,6 +16,7 @@ import deadlineRoutes from './routes/deadlines.js';
 import eventRoutes from './routes/events.js';
 import exportRoutes from './routes/exports.js';
 import analyticsRoutes from './routes/analytics.js';
+import adminRoutes from './routes/admin.js';
 
 const app = express();
 
@@ -69,6 +70,7 @@ app.use('/api/deadlines', deadlineRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/exports', exportRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/admin', adminRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ message: 'Route not found' });
